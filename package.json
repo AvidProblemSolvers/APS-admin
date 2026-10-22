@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-reporter=dot \"tests/**/*.test.ts\" \"tests/**/*.test.js\"",
-    "mock": "node scripts/mock_functions.mjs"
+    "mock": "node scripts/mock_functions.mjs",
+    "smoke": "node scripts/browser_smoke.mjs"
   },
-  "engines": { "node": ">=22.18" }
+  "engines": {
+    "node": ">=22.18"
+  }
 }

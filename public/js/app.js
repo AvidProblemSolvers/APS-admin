@@ -97,5 +97,6 @@ app.addEventListener("click", async (e) => {
   showSignIn({ message: "Signed out." });
 });
 
-window.addEventListener("hashchange", route);
+// A magic link opened in a tab that already shows the admin only changes the hash.
+window.addEventListener("hashchange", () => (/(^#|&)(access_token|error)=/.test(location.hash) ? start() : route()));
 start();

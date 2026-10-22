@@ -33,6 +33,7 @@
 - [x] Real browser (headless Chrome against the mock): owner sees 10 tabs; team DOM has exactly 3 tab links;
       team typing #/audit lands on Bookings; deactivated member gets "Not authorised"; 500px layout stacks cleanly
 - [x] `deno check` passes on every function entry point
+- [x] `npm run smoke`: 14-step real-browser click-through (all panes, every write flow, then the team view) — passes
 
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)

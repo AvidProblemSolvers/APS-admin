@@ -113,4 +113,5 @@ python3 build.py              build the SPA into dist/ (needs SUPABASE_ANON_KEY,
 python3 check.py              validate HTML, tokens, noindex, CSP, role and audit invariants
 npm test                      offline tests: real Edge Function handlers on an in-memory DB
 node scripts/mock_functions.mjs   local preview on :8001 against the mock backend
+npm run smoke                 real-browser click-through of every pane (local Chrome, offline)
 ```
