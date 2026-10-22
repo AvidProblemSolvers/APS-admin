@@ -21,3 +21,15 @@
 - Signals: `session_id` is never selected. Traffic returns aggregates only.
 - Hard deletes are allowed by the data layer on exactly two tables: `slot_overrides` and `availability_rules`. Everything else, including `team_members`, is refused in code.
 - `trigger-publish` lives in this repo (it is only ever called by the admin). repository_dispatch returns no run id, so the function looks up the run created after the dispatch and the UI polls it.
+- site_settings keys (the site repo must read the same names): `razorpay_mode` (`test`|`live`), `razorpay_button_id_test`, `razorpay_button_id_live` (each `pl_` + 14 alphanumerics, or blank), `scheduler_timezone`, `scheduler_slot_minutes`, `scheduler_buffer_minutes`, `scheduler_min_notice_hours`, `scheduler_window_days`. Two button ids + a mode key means switching Test↔Live is one change and one audit line, and the other id is never lost. The weekly windows stay in `availability_rules` (§8 pane 3); "the scheduler's availability rules" in site_settings is read as the scheduler's parameters.
+- site_settings `value` is assumed to be `text`; numbers are stored as their decimal string. If the column is jsonb, the stored values become JSON strings — see DEPLOY.md.
+- Cross-key rule: the mode can only point at a button id that is set, and the active id cannot be blanked.
+- Settings has "Save & Publish" as well as "Save", because if the site reads site_settings at build time a change only goes live on the next build. Owner and admin can both use it (both hold publish rights in §9).
+- The settings validator is one plain-JS file enforced by the Edge Function; `build.py` keeps a byte-identical copy at `public/js/shared/` for the browser and `check.py` fails if they drift.
+- Magic-link sessions use GoTrue's implicit flow (tokens in the URL fragment, stripped on arrival) and live in localStorage; refresh via `/auth/v1/token?grant_type=refresh_token`. The sign-in form always replies "If that address is authorised, a sign-in link is on its way."
+- Routing is by hash (`#/bookings`), so Cloudflare needs no SPA rewrite and `_redirects` is not shipped. A pane the role cannot see is never mounted even if typed into the address bar.
+- CSP has no `unsafe-inline`: no inline scripts, styles or style attributes anywhere (check.py enforces). Chart and rank bars are SVG attributes for that reason.
+- The Traffic chart is a single-series bar chart in one accent colour, with per-bar hover titles and a table view. Days are IST calendar days.
+- The PUBLISH button is the one filled-gradient control in the admin; everything else is outlined (mirrors the site's convention).
+- Display times: IST first, then the client's zone (if known) or the viewer's own zone when it differs from IST.
+- Native `confirm()` dialogs guard every outward action (emails, approvals, role changes, deactivation, publish, Live mode).

@@ -22,9 +22,11 @@ export const IDS = {
 
 export const LEAK_AMOUNTS = [98765.43, 87654.32, 76543.21, 65432.1, 54321.09];
 
-const h = (hours: number) => new Date(NOW.getTime() + hours * 3_600_000).toISOString();
+let base = NOW;
+const h = (hours: number) => new Date(base.getTime() + hours * 3_600_000).toISOString();
 
-export function seed(): Record<string, Row[]> {
+export function seed(now: Date = NOW): Record<string, Row[]> {
+  base = now;
   return {
     team_members: [
       { id: IDS.owner, email: "owner@avidproblemsolvers.com", full_name: "Owner One", role: "owner", active: true, created_at: h(-2000) },
@@ -132,7 +134,7 @@ function pageViews(): Row[] {
         path: i % 3 === 0 ? "/answers/what-is-operations-consulting" : "/",
         device: i % 2 ? "mobile" : "desktop",
         session_id: `pv-${d}-${i % 5}`,
-        created_at: new Date(NOW.getTime() - d * 86_400_000 - i * 600_000).toISOString(),
+        created_at: new Date(base.getTime() - d * 86_400_000 - i * 600_000).toISOString(),
       });
     }
   }
