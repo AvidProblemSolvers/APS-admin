@@ -1,0 +1,10 @@
+{
+  "name": "aps-admin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-reporter=spec tests/",
+    "mock": "node scripts/mock_functions.mjs"
+  },
+  "engines": { "node": ">=22.18" }
+}
