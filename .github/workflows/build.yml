@@ -1,0 +1,59 @@
+# APS Admin — test, build, check, deploy to Cloudflare Pages (SPEC §9: "the same, minus gen.py").
+# Edge Functions are NOT deployed from here; see DEPLOY.md.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Edge Functions
+        run: cd supabase/functions && deno check */index.ts
+
+      - name: Offline tests (real handlers, in-memory DB)
+        run: npm test
+
+      - name: Static checks
+        run: python3 check.py
+
+      - name: Build
+        if: github.event_name != 'pull_request'
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://rtqitjlpwkubdiakhiqu.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python3 build.py
+
+      - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=aps-admin --branch=main

@@ -37,8 +37,13 @@
 
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)
-- [ ] GitHub Actions workflow
-- [ ] DEPLOY.md
+- [x] GitHub Actions workflow (deno check → npm test → check.py → build → wrangler pages deploy)
+- [x] DEPLOY.md
+
+## NEEDS CONFIRMATION from the site repo (not blocked — built to a documented assumption)
+- `site_settings` column types (assumed `value text`, `updated_by uuid`) and the key names in DEPLOY.md §0
+- `create-meeting` request shape (`{ booking_id }`) and whether it already sends the confirmation emails
+- Partial unique index on `bookings.slot_start` exists
 
 ## BLOCKED
-(none yet)
+(none — deploying, secrets, DNS and the Supabase dashboard are the user's by design; see DEPLOY.md)
