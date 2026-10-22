@@ -2,3 +2,22 @@
 
 - Tests and the local mock run the **real** Edge Function handlers in Node 24 (native TS type stripping) against an in-memory DB, instead of a separate Python re-implementation in `scripts/mock_functions.py`, so the mock can never drift from production logic. The site repo's mock was not read (outside this folder). Mock lives at `scripts/mock_functions.mjs`.
 - No supabase-js anywhere: functions talk to PostgREST and GoTrue with `fetch`, the SPA talks to GoTrue with `fetch`. Zero dependencies, nothing to bundle, nothing remote to import.
+- One Edge Function per pane (12 total), each declaring its own role list per action inline. The shared `serve()` pipeline performs the check; `tests/matrix.ts` holds an independently written copy of the §8 matrix and the suite fails if they diverge.
+- Unauthorised = one response for everything (no token, bad token, signed-in stranger, deactivated member): `403 not_authorised`. No hint whether the address exists.
+- Revenue for non-owners: `bookings.amount` and `bookings.currency` are not in the SELECT list at all; the `revenue_month` stat key is absent. Row-level amounts count as revenue.
+- "Revenue this month" uses the IST calendar month (the business runs on IST); captured bookings only, summed per currency.
+- "Total" bookings excludes `cancelled` and `refunded`. "Brief missing" counts captured bookings with no `brief_submitted_at`.
+- The client's own timezone is only known when they filed a slot request (`requester_timezone`); otherwise the Bookings table shows IST plus the viewer's local zone, labelled as such.
+- "Email booking link" sends `/confirmed?razorpay_payment_id=<id>` (Razorpay's own redirect parameter) and sets `reminder_sent_at`, so the 6-hourly cron does not send a duplicate.
+- Slot-request approve: claims the request (`status=pending` → `approved`) first as a lock against double approval, then sets the booking; the DB's partial unique index on `slot_start` turns a clash into a clean `409 slot_taken` and the request is reverted to pending. Then calls the site's `create-meeting` with `{ booking_id }` and sends both confirmation emails from the admin function. If the site's create-meeting also emails, one of the two must stop — noted in DEPLOY.md.
+- Decline emails the next 12 open slots, computed by the same generator the Availability preview uses, in the client's zone and IST.
+- Weekday numbering in `availability_rules`: 0 = Sunday … 6 = Saturday (JavaScript `getUTCDay`).
+- Slot overrides are interpreted in the `scheduler_timezone` setting (default Asia/Kolkata), since `slot_overrides` has no timezone column.
+- Team: an owner also cannot deactivate themselves (in addition to not changing their own role). After a demotion/deactivation of an owner the function re-counts active owners and undoes its own write if a concurrent change left none.
+- Deactivation also bans the auth user via GoTrue (`ban_duration`) as defence in depth; reactivation lifts it. Rows are never deleted.
+- Inviting an address that already has an auth account (but no team row) links that account and sends a magic link instead of failing.
+- Content: only existing `site_content` keys can be edited (no create, no delete); empty values are refused so the site can never build with empty copy.
+- Answers: no delete action — unpublish instead. Any change to an answer that is or was published triggers a rebuild. One audit row per save listing the changed fields.
+- Signals: `session_id` is never selected. Traffic returns aggregates only.
+- Hard deletes are allowed by the data layer on exactly two tables: `slot_overrides` and `availability_rules`. Everything else, including `team_members`, is refused in code.
+- `trigger-publish` lives in this repo (it is only ever called by the admin). repository_dispatch returns no run id, so the function looks up the run created after the dispatch and the UI polls it.

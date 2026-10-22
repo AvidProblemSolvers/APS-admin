@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --test-reporter=spec tests/",
+    "test": "node --test --test-reporter=dot \"tests/**/*.test.ts\" \"tests/**/*.test.js\"",
     "mock": "node scripts/mock_functions.mjs"
   },
   "engines": { "node": ">=22.18" }
