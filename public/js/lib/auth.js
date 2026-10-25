@@ -1,10 +1,13 @@
 // Supabase Auth over plain fetch: magic link only.
 // - sendLink() always passes create_user:false, so the interface cannot create accounts,
 //   and always reports the same neutral message whatever the server says.
+// - sendLink() refuses an address outside the allowed domain without calling GoTrue. That is
+//   a courtesy only: every Edge Function refuses off-domain users itself (_shared/http.ts).
 // - The magic link returns tokens in the URL fragment (implicit flow); we read them once
 //   and strip them from the address bar.
 
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../config.js";
+import { ALLOWED_EMAIL_DOMAIN, SUPABASE_ANON_KEY, SUPABASE_URL } from "../config.js";
+import { allowedDomain, inAllowedDomain } from "../shared/email_domain.js";
 
 const KEY = "aps-admin-session";
 const base = `${SUPABASE_URL.replace(/\/$/, "")}/auth/v1`;
@@ -50,7 +53,11 @@ export function consumeRedirect(loc = window.location) {
 
 export const NEUTRAL_SENT = "If that address is authorised, a sign-in link is on its way. It expires in an hour.";
 
+export const EMAIL_DOMAIN = allowedDomain(ALLOWED_EMAIL_DOMAIN);
+export const WRONG_DOMAIN = `Use your ${EMAIL_DOMAIN} address.`;
+
 export async function sendLink(email) {
+  if (!inAllowedDomain(email, EMAIL_DOMAIN)) return WRONG_DOMAIN;
   const redirect = `${window.location.origin}/`;
   try {
     await fetch(`${base}/otp?redirect_to=${encodeURIComponent(redirect)}`, {

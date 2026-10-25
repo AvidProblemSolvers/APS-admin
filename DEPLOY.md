@@ -69,7 +69,15 @@ RESEND_API_KEY=<Resend key>
 GITHUB_PAT=<fine-grained PAT, see below>
 GITHUB_SITE_REPO=AvidProblemSolvers/<site repo name>
 BRIEF_BUCKET=<the private Storage bucket the brief uploads go to>
+# Optional. Defaults to @avidproblemsolvers.com. Every function refuses any signed-in user
+# outside this domain before looking at team_members.
+# ALLOWED_EMAIL_DOMAIN=@avidproblemsolvers.com
 ```
+
+**Email domain lock:** every team member's email must be `@avidproblemsolvers.com` (or
+`ALLOWED_EMAIL_DOMAIN`). An owner row on any other address is refused — check the owner row
+before go-live. If you ever change the domain, set the same value as a GitHub Actions
+*variable* `ALLOWED_EMAIL_DOMAIN` so the sign-in page's courtesy check matches.
 
 **GitHub PAT:** fine-grained, resource owner `AvidProblemSolvers`, **only the site repo**.
 Permissions: *Contents: Read and write* (required for `repository_dispatch`), *Actions: Read*

@@ -1,9 +1,11 @@
 // The request pipeline every admin Edge Function runs through:
-//   CORS → POST only → bearer token → GoTrue user → ACTIVE team_members row → action →
+//   CORS → POST only → bearer token → GoTrue user → allowed email domain →
+//   ACTIVE team_members row → action →
 //   the action's own role list → run.
 // The role check here is the server half of rule 3. It never trusts anything the browser
 // says about who the caller is or what role they hold.
 
+import { allowedDomain, inAllowedDomain } from "./email_domain.js";
 import { DbError, HttpError } from "./errors.ts";
 import type { Actor, Ctx, Deps, FunctionSpec, Role, Row } from "./types.ts";
 import { ROLES } from "./types.ts";
@@ -47,6 +49,10 @@ export async function authenticate(req: Request, deps: Deps): Promise<Actor> {
   if (!token) throw denied;
   const user = await deps.auth.getUser(token);
   if (!user) throw denied;
+  // Domain lock, before team_members is even read: an off-domain account is refused
+  // whatever role its row claims, with the same response as an unknown one.
+  const domain = allowedDomain(deps.env("ALLOWED_EMAIL_DOMAIN"));
+  if (!inAllowedDomain(user.email, domain)) throw denied;
   const rows = await deps.db.select("team_members", {
     columns: ["id", "email", "full_name", "role", "active"],
     where: [["eq", "id", user.id], ["eq", "active", true]],
@@ -54,6 +60,7 @@ export async function authenticate(req: Request, deps: Deps): Promise<Actor> {
   });
   const m = rows[0];
   if (!m || m.active !== true || !ROLES.includes(m.role as Role)) throw denied;
+  if (!inAllowedDomain(m.email, domain)) throw denied;
   return {
     id: String(m.id),
     email: String(m.email),

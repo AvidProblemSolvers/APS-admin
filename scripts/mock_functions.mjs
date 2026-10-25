@@ -24,6 +24,9 @@ const DIST = join(ROOT, "dist");
 
 const deps = makeDeps(seed(new Date()), { env: { ADMIN_ORIGIN: ORIGIN } });
 deps.fakeAuth.addUser({ id: IDS.stranger, email: "stranger@example.com" });
+// An off-domain account holding an active owner row: the domain lock refuses it anyway.
+deps.mem.tables.team_members.push({ id: IDS.outsider, email: "boss@example.com", full_name: "Off Domain", role: "owner", active: true, created_at: new Date().toISOString() });
+deps.fakeAuth.addUser({ id: IDS.outsider, email: "boss@example.com" });
 const refresh = new Map();
 const links = [];
 

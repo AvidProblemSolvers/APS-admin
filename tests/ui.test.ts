@@ -189,8 +189,28 @@ describe("sign-in", () => {
       return replies.shift();
     };
     const { sendLink, NEUTRAL_SENT } = await import("../public/js/lib/auth.js");
-    assert.equal(await sendLink("Known@x.com"), NEUTRAL_SENT);
-    assert.equal(await sendLink("nobody@x.com"), NEUTRAL_SENT);
-    assert.deepEqual(bodies, [{ email: "known@x.com", create_user: false }, { email: "nobody@x.com", create_user: false }]);
+    assert.equal(await sendLink("Known@AvidProblemSolvers.com"), NEUTRAL_SENT);
+    assert.equal(await sendLink("nobody@avidproblemsolvers.com"), NEUTRAL_SENT);
+    assert.deepEqual(bodies, [
+      { email: "known@avidproblemsolvers.com", create_user: false },
+      { email: "nobody@avidproblemsolvers.com", create_user: false },
+    ]);
+  });
+
+  it("refuses an off-domain address without contacting the auth service (a courtesy; the server is the gate)", async () => {
+    const g = globalThis as Record<string, unknown>;
+    g.window = { location: { origin: "https://admin.avidproblemsolvers.com" } };
+    let calls = 0;
+    g.fetch = async () => {
+      calls++;
+      return new Response("{}");
+    };
+    const { sendLink, WRONG_DOMAIN } = await import("../public/js/lib/auth.js");
+    for (const e of ["boss@example.com", "boss@evil.avidproblemsolvers.com", "boss@avidproblemsolvers.com.evil.io"]) {
+      assert.equal(await sendLink(e), WRONG_DOMAIN, e);
+    }
+    assert.equal(calls, 0);
+    assert.match(WRONG_DOMAIN, /@avidproblemsolvers\.com/);
+    assert.match(String(signIn()), /placeholder="you@avidproblemsolvers\.com"/);
   });
 });

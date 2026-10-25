@@ -141,10 +141,21 @@ if "create_user: false" not in auth:
 if re.search(r"type=.?password|signUp|/signup", auth):
     fail("auth.js: no password or sign-up path may exist")
 
-a = (ROOT / "supabase/functions/_shared/settings_schema.js").read_bytes()
-b = (ROOT / "public/js/shared/settings_schema.js").read_bytes()
-if a != b:
-    fail("public/js/shared/settings_schema.js differs from supabase/functions/_shared/ — run build.py")
+for name in ("settings_schema.js", "email_domain.js"):
+    a = (ROOT / "supabase/functions/_shared" / name).read_bytes()
+    b = (ROOT / "public/js/shared" / name).read_bytes()
+    if a != b:
+        fail("public/js/shared/%s differs from supabase/functions/_shared/ — run build.py" % name)
+
+# The email domain is written once, in _shared/email_domain.js, and the server gate uses it
+# before the team_members lookup.
+for p in files("supabase", {".ts", ".js"}) + files("public/js", {".js"}):
+    if p.name != "email_domain.js" and "@avidproblemsolvers.com" in p.read_text():
+        fail("%s: hard-codes the email domain — use _shared/email_domain.js" % p.relative_to(ROOT))
+http_src = (ROOT / "supabase/functions/_shared/http.ts").read_text()
+gate = http_src.find("inAllowedDomain(user.email")
+if gate < 0 or gate > http_src.find('"team_members"'):
+    fail("_shared/http.ts must check the email domain before the team_members lookup")
 
 # --- Edge Functions ----------------------------------------------------------------------------
 fn_dirs = [d for d in (ROOT / "supabase/functions").iterdir() if d.is_dir() and not d.name.startswith("_")]

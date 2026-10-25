@@ -6,12 +6,22 @@ import type { Row } from "../supabase/functions/_shared/types.ts";
 
 export { FUNCTIONS, IDS, NOW };
 
-export type Who = "owner" | "admin" | "team" | "inactive" | "stranger" | "anonymous";
+export type Who = "owner" | "admin" | "team" | "inactive" | "stranger" | "newcomer" | "outsider" | "anonymous";
 
 export function fresh(env: Record<string, string> = {}): TestDeps {
   const deps = makeDeps(seed(), { now: () => new Date(NOW), env });
-  // A signed-in Supabase user who is not on the team at all.
+  // Signed-in Supabase users who are not on the team at all: one off-domain, one on-domain.
   deps.fakeAuth.addUser({ id: IDS.stranger, email: "stranger@example.com" });
+  deps.fakeAuth.addUser({ id: IDS.newcomer, email: "newcomer@avidproblemsolvers.com" });
+  return deps;
+}
+
+/** An off-domain account with an ACTIVE owner row — the domain lock must still refuse it. */
+export function withOutsider(deps: TestDeps, email = "boss@example.com"): TestDeps {
+  deps.mem.tables.team_members.push({
+    id: IDS.outsider, email, full_name: "Off Domain", role: "owner", active: true, created_at: "2026-01-01T00:00:00Z",
+  });
+  deps.fakeAuth.addUser({ id: IDS.outsider, email });
   return deps;
 }
 

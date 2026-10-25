@@ -13,7 +13,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const PORT = 8021;
 const ORIGIN = `http://localhost:${PORT}`;
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const ID = { owner: "00000000-0000-4000-8000-000000000001", team: "00000000-0000-4000-8000-000000000004" };
+const ID = { owner: "00000000-0000-4000-8000-000000000001", team: "00000000-0000-4000-8000-000000000004", outsider: "00000000-0000-4000-8000-000000000097" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const mock = spawn(process.execPath, ["scripts/mock_functions.mjs", "--port", String(PORT)], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
@@ -92,8 +92,24 @@ try {
   await step("sign-in page offers a magic link and no sign-up", async () => {
     await go(`${ORIGIN}/`);
     await until("document.querySelector('[data-form=send-link]')", "sign-in form");
-    await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='nobody@example.com'; f.requestSubmit(); return 1");
+    await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='nobody@avidproblemsolvers.com'; f.requestSubmit(); return 1");
     await until("document.querySelector('.message').textContent.includes('If that address is authorised')", "neutral message");
+  });
+
+  await step("sign-in page refuses an off-domain address without requesting a link", async () => {
+    await go(`${ORIGIN}/`);
+    await until("document.querySelector('[data-form=send-link]')", "sign-in form");
+    await js("window.__otp = 0; const f0 = window.fetch; window.fetch = (u, i) => (String(u).includes('/otp') && window.__otp++, f0(u, i)); return 1");
+    await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='boss@example.com'; f.requestSubmit(); return 1");
+    await until("document.querySelector('.message').textContent.includes('Use your @avidproblemsolvers.com address')", "domain message");
+    if (await js("return window.__otp")) throw new Error("an off-domain link was requested");
+  });
+
+  await step("page bypassed: an off-domain account with an owner row gets Not authorised", async () => {
+    await go(`${ORIGIN}/#access_token=token-${ID.outsider}&refresh_token=r-${ID.outsider}&expires_in=3600`);
+    await until("document.querySelector('h1')?.textContent === 'Not authorised'", "Not authorised screen");
+    if (await js("return document.querySelectorAll('.tabs a').length")) throw new Error("tabs rendered");
+    await js("localStorage.clear(); return 1");
   });
 
   await step("owner signs in and sees all ten tabs", async () => {

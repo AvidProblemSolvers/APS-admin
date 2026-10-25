@@ -1,7 +1,9 @@
 // Sign-in, Not authorised, and the signed-in frame. Pure renders.
 
+import { ALLOWED_EMAIL_DOMAIN } from "../config.js";
 import { html } from "../lib/html.js";
 import { panesFor } from "../lib/panes.js";
+import { allowedDomain } from "../shared/email_domain.js";
 
 const logo = html`<img class="gate-logo" src="/APS_LOGO.png" alt="Avid Problem Solvers" width="160" height="100">`;
 
@@ -11,7 +13,7 @@ export function signIn({ message = "", error = "" } = {}) {
     <p class="eyebrow">APS Admin</p>
     <form data-form="send-link" novalidate>
       <label class="field"><span class="label sr-only">Email</span>
-        <input type="email" name="email" required autocomplete="email" placeholder="you@avidproblemsolvers.com" aria-label="Email"></label>
+        <input type="email" name="email" required autocomplete="email" placeholder="you${allowedDomain(ALLOWED_EMAIL_DOMAIN)}" aria-label="Email"></label>
       <button class="btn primary" type="submit">Email me a sign-in link</button>
     </form>
     <p class="message" role="status">${error ? html`<span class="bad-text">${error}</span>` : message}</p>

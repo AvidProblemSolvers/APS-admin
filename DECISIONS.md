@@ -33,3 +33,7 @@
 - The PUBLISH button is the one filled-gradient control in the admin; everything else is outlined (mirrors the site's convention).
 - Display times: IST first, then the client's zone (if known) or the viewer's own zone when it differs from IST.
 - Native `confirm()` dialogs guard every outward action (emails, approvals, role changes, deactivation, publish, Live mode).
+- Email domain lock: the GoTrue user's email is checked before team_members is read, and the team row's email is checked too (defence in depth). Exact domain only — subdomains and lookalikes are refused. Comparison is case-insensitive. `ALLOWED_EMAIL_DOMAIN` accepts `example.com` or `@example.com`; blank means the default.
+- The domain constant is a plain-JS shared module (like the settings validator) so the browser imports a byte-identical copy; build.py writes `ALLOWED_EMAIL_DOMAIN` into config.js (null → the module's default), so the literal exists once.
+- Team invite also refuses off-domain addresses (400 with the required domain named) — such a member could never sign in. That message is shown only to an owner, so it reveals nothing to an outsider.
+- The sign-in page answers an off-domain address with "Use your @avidproblemsolvers.com address." This states a public policy, not whether an account exists; on-domain addresses still all get the one neutral reply.

@@ -33,7 +33,16 @@
 - [x] Real browser (headless Chrome against the mock): owner sees 10 tabs; team DOM has exactly 3 tab links;
       team typing #/audit lands on Bookings; deactivated member gets "Not authorised"; 500px layout stacks cleanly
 - [x] `deno check` passes on every function entry point
-- [x] `npm run smoke`: 14-step real-browser click-through (all panes, every write flow, then the team view) — passes
+- [x] `npm run smoke`: 16-step real-browser click-through (all panes, every write flow, then the team view) — passes
+
+## Email domain lock
+- [x] `_shared/email_domain.js`: the one place the domain is written; `ALLOWED_EMAIL_DOMAIN` env, default `@avidproblemsolvers.com`
+- [x] `_shared/http.ts` refuses off-domain users before the team_members lookup, same `403 not_authorised` as unknown
+- [x] Team invite refuses off-domain addresses
+- [x] Sign-in page refuses off-domain addresses without calling GoTrue (courtesy only); placeholder from the same constant
+- [x] check.py: no hard-coded domain outside the shared module; gate must precede the team_members lookup; browser copy byte-identical
+- [x] Tests (369 total): off-domain active owner refused by every function × action without reading any table;
+      on-domain non-member refused; on-domain members unchanged; lookalike domains; env override; smoke steps for the page and a bypassed page
 
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)

@@ -6,9 +6,9 @@ describe("team", () => {
   it("no sequence of team actions can leave zero active owners", async () => {
     const deps = fresh();
     deps.mem.tables.team_members.push({
-      id: IDS.owner2, email: "owner2@x.com", role: "owner", active: true, created_at: "2026-01-01T00:00:00Z",
+      id: IDS.owner2, email: "owner2@avidproblemsolvers.com", role: "owner", active: true, created_at: "2026-01-01T00:00:00Z",
     });
-    deps.fakeAuth.addUser({ id: IDS.owner2, email: "owner2@x.com" });
+    deps.fakeAuth.addUser({ id: IDS.owner2, email: "owner2@avidproblemsolvers.com" });
     const owners = () => deps.mem.tables.team_members.filter((m) => m.role === "owner" && m.active).length;
 
     // With two owners, one may demote the other…
@@ -23,9 +23,9 @@ describe("team", () => {
   it("the last-owner guard holds even when two owners demote each other at the same moment", async () => {
     const deps = fresh();
     deps.mem.tables.team_members.push({
-      id: IDS.owner2, email: "owner2@x.com", role: "owner", active: true, created_at: "2026-01-01T00:00:00Z",
+      id: IDS.owner2, email: "owner2@avidproblemsolvers.com", role: "owner", active: true, created_at: "2026-01-01T00:00:00Z",
     });
-    deps.fakeAuth.addUser({ id: IDS.owner2, email: "owner2@x.com" });
+    deps.fakeAuth.addUser({ id: IDS.owner2, email: "owner2@avidproblemsolvers.com" });
     deps.fakeAuth.tokens.set("token-owner2", IDS.owner2);
     const [a, b] = await Promise.all([
       call(deps, "admin-team", "owner", { action: "set_role", member_id: IDS.owner2, role: "admin" }),
@@ -64,9 +64,9 @@ describe("team", () => {
 
   it("invite creates the auth user, the team row with invited_by, and an audit row", async () => {
     const deps = fresh();
-    const r = await call(deps, "admin-team", "owner", { action: "invite", email: "New@Example.com", role: "team", full_name: "New Person" });
+    const r = await call(deps, "admin-team", "owner", { action: "invite", email: "New@AvidProblemSolvers.com", role: "team", full_name: "New Person" });
     assert.equal(r.status, 200, r.text);
-    const row = deps.mem.tables.team_members.find((m) => m.email === "new@example.com")!;
+    const row = deps.mem.tables.team_members.find((m) => m.email === "new@avidproblemsolvers.com")!;
     assert.equal(row.role, "team");
     assert.equal(row.invited_by, IDS.owner);
     assert.equal(deps.fakeAuth.invites[0].redirectTo, "https://admin.avidproblemsolvers.com/");
@@ -75,10 +75,10 @@ describe("team", () => {
 
   it("inviting an existing auth account links it and sends a magic link instead", async () => {
     const deps = fresh();
-    const r = await call(deps, "admin-team", "owner", { action: "invite", email: "stranger@example.com", role: "admin" });
+    const r = await call(deps, "admin-team", "owner", { action: "invite", email: "newcomer@avidproblemsolvers.com", role: "admin" });
     assert.equal(r.status, 200, r.text);
-    assert.equal(deps.mem.tables.team_members.find((m) => m.email === "stranger@example.com")!.id, IDS.stranger);
-    assert.equal(deps.fakeAuth.magicLinks[0].email, "stranger@example.com");
+    assert.equal(deps.mem.tables.team_members.find((m) => m.email === "newcomer@avidproblemsolvers.com")!.id, IDS.newcomer);
+    assert.equal(deps.fakeAuth.magicLinks[0].email, "newcomer@avidproblemsolvers.com");
   });
 
   it("inviting a current or former member is refused with a clear message", async () => {
@@ -93,5 +93,17 @@ describe("team", () => {
     assert.equal((await call(deps, "admin-team", "owner", { action: "invite", email: "x@y.com", role: "superuser" })).status, 400);
     assert.equal((await call(deps, "admin-team", "owner", { action: "invite", email: "nope", role: "team" })).status, 400);
     assert.equal((await call(deps, "admin-team", "owner", { action: "set_role", member_id: IDS.team, role: "root" })).status, 400);
+  });
+
+  it("refuses to invite an address outside the allowed domain, and writes nothing", async () => {
+    const deps = fresh();
+    const n = deps.mem.tables.team_members.length;
+    for (const email of ["new@example.com", "new@evil.avidproblemsolvers.com", "new@avidproblemsolvers.com.evil.io"]) {
+      const r = await call(deps, "admin-team", "owner", { action: "invite", email, role: "team" });
+      assert.equal(r.status, 400, email);
+      assert.match(String(r.json.message), /@avidproblemsolvers\.com/);
+    }
+    assert.equal(deps.mem.tables.team_members.length, n);
+    assert.equal(deps.fakeAuth.invites.length + deps.fakeAuth.magicLinks.length, 0);
   });
 });
