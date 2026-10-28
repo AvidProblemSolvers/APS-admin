@@ -11,11 +11,45 @@ describe("settings validation", () => {
     ["razorpay_mode", "live", true],
     ["razorpay_mode", "LIVE", false],
     ["razorpay_mode", "prod", false],
-    ["razorpay_button_id_live", "pl_AbCdEfGhIjKlMn", true],
-    ["razorpay_button_id_live", "pl_short", false],
-    ["razorpay_button_id_live", "rzp_live_AbCdEfGhIjKlMn", false],
-    ["razorpay_button_id_live", "pl_AbCdEfGhIjKlM<", false],
-    ["razorpay_button_id_test", "", true],
+    ["razorpay_payment_url_test", "", true],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/NEKINBI", true],
+    ["razorpay_payment_url_live", "  https://rzp.io/rzp/NEKINBI  ", true],
+    ["razorpay_payment_url_live", "https://rzp.io/l/aB3_x-y.z~1", true],
+    ["razorpay_payment_url_live", "https://pages.razorpay.com/pl_AbCdEfGhIjKlMn/view", true],
+    ["razorpay_payment_url_live", "https://a.b.razorpay.com/x", true],
+    ["razorpay_payment_url_live", "http://rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "//rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://rzp.io", false],
+    ["razorpay_payment_url_live", "https://rzp.io/", false],
+    ["razorpay_payment_url_live", "https://rzp.io:443/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://user@rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://user:pw@rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://evil.com@rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://rzp.io@evil.com/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://rzp.io.evil.com/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://evil-rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://evilrzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://www.rzp.io/rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://rzp.io./rzp/NEKINBI", false],
+    ["razorpay_payment_url_live", "https://razorpay.com/x", false],
+    ["razorpay_payment_url_live", "https://evilrazorpay.com/x", false],
+    ["razorpay_payment_url_live", "https://pages.razorpay.com.evil.com/x", false],
+    ["razorpay_payment_url_live", "https://pages-razorpay.com/x", false],
+    ["razorpay_payment_url_live", "https://-x.razorpay.com/x", false],
+    ["razorpay_payment_url_live", "https://rzp.io\\@evil.com/x", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/NEKINBI?next=https://evil.com", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/NEKINBI#x", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/NEK INBI", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/<script>", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/%3Cx%3E", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/\"onmouseover=x", false],
+    ["razorpay_payment_url_live", "javascript:alert(1)//rzp.io/x", false],
+    ["razorpay_payment_url_live", "https://rzp.io/rzp/NEKINBI\nhttps://evil.com/", false],
+    ["razorpay_payment_url_live", "https://rzp.io/" + "a".repeat(485), true],
+    ["razorpay_payment_url_live", "https://rzp.io/" + "a".repeat(486), false],
+    ["razorpay_button_id_live", "pl_AbCdEfGhIjKlMn", false],
+    ["razorpay_button_id_test", "", false],
     ["scheduler_timezone", "Asia/Kolkata", true],
     ["scheduler_timezone", "Mars/Olympus", false],
     ["scheduler_timezone", "", false],
@@ -36,16 +70,20 @@ describe("settings validation", () => {
     });
   }
 
-  it("cannot switch to Live without a Live button id", () => {
-    const r = validateChanges({ razorpay_mode: "test", razorpay_button_id_test: "pl_TestTestTest01" }, { razorpay_mode: "live" });
+  it("cannot switch to Live without a Live payment page URL", () => {
+    const r = validateChanges({ razorpay_mode: "test", razorpay_payment_url_test: "https://rzp.io/rzp/TESTPAGE1" }, { razorpay_mode: "live" });
     assert.equal(r.ok, false);
-    assert.match(r.errors.razorpay_mode, /Live-mode button id/);
+    assert.match(r.errors.razorpay_mode, /Live-mode payment page URL/);
   });
 
-  it("cannot blank the active button id", () => {
-    const r = validateChanges({ razorpay_mode: "test", razorpay_button_id_test: "pl_TestTestTest01" }, { razorpay_button_id_test: "" });
+  it("cannot blank the active payment page URL", () => {
+    const r = validateChanges({ razorpay_mode: "test", razorpay_payment_url_test: "https://rzp.io/rzp/TESTPAGE1" }, { razorpay_payment_url_test: "" });
     assert.equal(r.ok, false);
-    assert.ok(r.errors.razorpay_button_id_test);
+    assert.ok(r.errors.razorpay_payment_url_test);
+  });
+
+  it("stores the trimmed URL", () => {
+    assert.equal(validateSetting("razorpay_payment_url_live", " https://rzp.io/rzp/NEKINBI ").value, "https://rzp.io/rzp/NEKINBI");
   });
 });
 
@@ -54,13 +92,13 @@ describe("settings function", () => {
     const deps = fresh();
     const r = await call(deps, "admin-settings", "admin", {
       action: "save",
-      changes: { razorpay_button_id_live: "pl_LiveLiveLive01", razorpay_mode: "live" },
+      changes: { razorpay_payment_url_live: "https://rzp.io/rzp/LIVEPAGE1", razorpay_mode: "live" },
     });
     assert.equal(r.status, 200, r.text);
-    assert.deepEqual((r.json.updated as string[]).sort(), ["razorpay_button_id_live", "razorpay_mode"]);
+    assert.deepEqual((r.json.updated as string[]).sort(), ["razorpay_mode", "razorpay_payment_url_live"]);
     const rows = deps.mem.tables.site_settings;
     assert.equal(rows.find((x) => x.key === "razorpay_mode")!.value, "live");
-    for (const k of ["razorpay_mode", "razorpay_button_id_live"]) {
+    for (const k of ["razorpay_mode", "razorpay_payment_url_live"]) {
       assert.equal(rows.find((x) => x.key === k)!.updated_by, IDS.admin, `${k} updated_by`);
     }
     assert.equal(auditInserts(deps), 0, "the function must not insert into audit_log");
@@ -74,11 +112,11 @@ describe("settings function", () => {
     const deps = fresh();
     const r = await call(deps, "admin-settings", "owner", {
       action: "save",
-      changes: { scheduler_buffer_minutes: "7", razorpay_button_id_test: "nope" },
+      changes: { scheduler_buffer_minutes: "7", razorpay_payment_url_test: "nope" },
     });
     assert.equal(r.status, 400);
     const errors = r.json.errors as Record<string, string>;
-    assert.ok(errors.scheduler_buffer_minutes && errors.razorpay_button_id_test);
+    assert.ok(errors.scheduler_buffer_minutes && errors.razorpay_payment_url_test);
     assert.equal(deps.mem.log.filter((l) => l.table === "site_settings").length, 0);
   });
 

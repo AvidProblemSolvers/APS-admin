@@ -3,7 +3,12 @@
 // the browser for instant feedback. The server is the authority; the browser is a courtesy.
 // Values are stored as text.
 
-const PAYMENT_BUTTON = /^pl_[A-Za-z0-9]{14}$/;
+// https only; host is rzp.io exactly or a subdomain of razorpay.com; no port, no userinfo,
+// no query or fragment; the path uses unreserved characters and slashes only. Matched as a
+// whole string rather than through a URL parser, so there is nothing for a parser to
+// reinterpret (rzp.io.evil.com, evil-rzp.io, www.rzp.io, user@rzp.io, rzp.io:443 all fail).
+const PAYMENT_URL = /^https:\/\/(?:rzp\.io|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+razorpay\.com)\/[A-Za-z0-9._~\-\/]*[A-Za-z0-9._~\-][A-Za-z0-9._~\-\/]*$/;
+const PAYMENT_URL_MAX = 500;
 
 function isTimeZone(tz) {
   try {
@@ -25,11 +30,12 @@ function int(min, max, step = 1) {
   };
 }
 
-function buttonId(raw) {
+function paymentUrl(raw) {
   const s = String(raw ?? "").trim();
   if (s === "") return { ok: true, value: "" };
-  if (!PAYMENT_BUTTON.test(s)) {
-    return { ok: false, error: "A Razorpay Payment Button id looks like pl_ followed by 14 letters or digits." };
+  if (s.length > PAYMENT_URL_MAX) return { ok: false, error: `At most ${PAYMENT_URL_MAX} characters.` };
+  if (!PAYMENT_URL.test(s)) {
+    return { ok: false, error: "Must be a Razorpay payment page URL: https://rzp.io/… or https://….razorpay.com/…" };
   }
   return { ok: true, value: s };
 }
@@ -38,8 +44,8 @@ export const SETTINGS = [
   {
     key: "razorpay_mode",
     group: "Payment",
-    label: "Active Razorpay button",
-    help: "Which button the site renders. Switching to Live takes real money.",
+    label: "Active Razorpay payment page",
+    help: "Which payment page the site links to. Switching to Live takes real money.",
     kind: "enum",
     options: ["test", "live"],
     default: "test",
@@ -49,24 +55,24 @@ export const SETTINGS = [
     },
   },
   {
-    key: "razorpay_button_id_test",
+    key: "razorpay_payment_url_test",
     group: "Payment",
-    label: "Test-mode Payment Button id",
-    help: "From the Razorpay dashboard in Test mode.",
-    kind: "text",
-    placeholder: "pl_XXXXXXXXXXXXXX",
+    label: "Test-mode Razorpay payment page URL",
+    help: "The Payment Page link from the Razorpay dashboard in Test mode.",
+    kind: "url",
+    placeholder: "https://rzp.io/rzp/XXXXXXX",
     default: "",
-    validate: buttonId,
+    validate: paymentUrl,
   },
   {
-    key: "razorpay_button_id_live",
+    key: "razorpay_payment_url_live",
     group: "Payment",
-    label: "Live-mode Payment Button id",
-    help: "From the Razorpay dashboard in Live mode.",
-    kind: "text",
-    placeholder: "pl_XXXXXXXXXXXXXX",
+    label: "Live-mode Razorpay payment page URL",
+    help: "The Payment Page link from the Razorpay dashboard in Live mode.",
+    kind: "url",
+    placeholder: "https://rzp.io/rzp/XXXXXXX",
     default: "",
-    validate: buttonId,
+    validate: paymentUrl,
   },
   {
     key: "scheduler_timezone",
@@ -141,13 +147,13 @@ export function validateChanges(current, changes) {
   }
   const merged = { ...defaults(), ...current, ...values };
   const mode = merged.razorpay_mode;
-  const activeKey = `razorpay_button_id_${mode}`;
+  const activeKey = `razorpay_payment_url_${mode}`;
   if (!errors.razorpay_mode && !errors[activeKey] && !merged[activeKey]) {
     // Blame whichever field the person just touched.
     const field = activeKey in changes ? activeKey : "razorpay_mode";
     errors[field] = field === activeKey
-      ? "This is the active button; it cannot be blank. Switch mode first."
-      : `Set the ${mode === "live" ? "Live" : "Test"}-mode button id before making it active.`;
+      ? "This is the active payment page; it cannot be blank. Switch mode first."
+      : `Set the ${mode === "live" ? "Live" : "Test"}-mode payment page URL before making it active.`;
   }
   return { ok: Object.keys(errors).length === 0, values, errors };
 }

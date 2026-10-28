@@ -109,7 +109,7 @@ export function seed(now: Date = NOW): Record<string, Row[]> {
     ],
     site_settings: [
       { key: "razorpay_mode", value: "test", updated_at: h(-100), updated_by: IDS.owner },
-      { key: "razorpay_button_id_test", value: "pl_TestTestTest01", updated_at: h(-100), updated_by: IDS.owner },
+      { key: "razorpay_payment_url_test", value: "https://rzp.io/rzp/TESTPAGE1", updated_at: h(-100), updated_by: IDS.owner },
     ],
     audit_log: [
       { actor_id: IDS.owner, actor_email: "owner@avidproblemsolvers.com", action: "content.update", target: "hero.eyebrow", old_value: "CONSULTING", new_value: "OPERATIONS CONSULTING", actor_country: "IN", created_at: h(-300) },

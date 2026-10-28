@@ -18,15 +18,15 @@ These are the integration points this repo assumes but could not see:
    | key | values |
    |---|---|
    | `razorpay_mode` | `test` or `live` |
-   | `razorpay_button_id_test` | `pl_` + 14 letters/digits, or empty |
-   | `razorpay_button_id_live` | `pl_` + 14 letters/digits, or empty |
+   | `razorpay_payment_url_test` | Razorpay Payment Page URL (`https://rzp.io/…` or `https://<sub>.razorpay.com/…`), or empty |
+   | `razorpay_payment_url_live` | same, or empty |
    | `scheduler_timezone` | IANA name, default `Asia/Kolkata` |
    | `scheduler_slot_minutes` | default `60` |
    | `scheduler_buffer_minutes` | default `15` |
    | `scheduler_min_notice_hours` | default `24` |
    | `scheduler_window_days` | default `30` |
 
-   The site picks `razorpay_button_id_<razorpay_mode>`. If gen.py reads these at build time, a
+   The site picks `razorpay_payment_url_<razorpay_mode>`. If gen.py reads these at build time, a
    change goes live on the next build — the Settings pane has **Save & Publish** for that. If
    `get-slots` reads the scheduler keys at request time, those take effect immediately.
 3. **`create-meeting` contract.** The admin's Approve calls the site's `create-meeting` with

@@ -142,11 +142,11 @@ try {
     await until("document.querySelector('[data-region=status]').textContent.includes('Live')", "build Live", 20000);
   });
 
-  await step("settings: switch to the Live button in one save", async () => {
-    await tab("settings", "document.querySelector('input[name=razorpay_button_id_live]')");
-    await js("const i=document.querySelector('input[name=razorpay_button_id_live]'); i.value='bad'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
-    await until("document.querySelector('[data-error=razorpay_button_id_live]').textContent.includes('pl_')", "inline validation");
-    await js("const i=document.querySelector('input[name=razorpay_button_id_live]'); i.value='pl_LiveLiveLive01'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+  await step("settings: switch to the Live payment page in one save", async () => {
+    await tab("settings", "document.querySelector('input[name=razorpay_payment_url_live]')");
+    await js("const i=document.querySelector('input[name=razorpay_payment_url_live]'); i.value='bad'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await until("document.querySelector('[data-error=razorpay_payment_url_live]').textContent.includes('payment page URL')", "inline validation");
+    await js("const i=document.querySelector('input[name=razorpay_payment_url_live]'); i.value='https://rzp.io/rzp/LIVEPAGE1'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await click("[data-click=mode][data-v=live]");
     await click("[data-click=save]");
     await until("document.querySelector('.mode-banner').innerText.includes('Live-mode')", "LIVE banner");

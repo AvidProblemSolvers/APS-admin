@@ -44,6 +44,12 @@
 - [x] Tests (369 total): off-domain active owner refused by every function × action without reading any table;
       on-domain non-member refused; on-domain members unchanged; lookalike domains; env override; smoke steps for the page and a bypassed page
 
+## Settings keys renamed to match the site repo
+- [x] `razorpay_button_id_{test,live}` → `razorpay_payment_url_{test,live}` in the schema (both copies), view, mock seed, tests, smoke, DEPLOY.md, DECISIONS.md
+- [x] Validation: https only; host `rzp.io` exactly or a subdomain of `razorpay.com`; no port, userinfo, query or fragment; unreserved path characters; 500-char cap
+- [x] Fields labelled as the Razorpay payment page URL; `razorpay_mode` unchanged
+- [x] Tests: look-alikes (`rzp.io.evil.com`, `evil-rzp.io`, `www.rzp.io`, `razorpay.com.evil.com`, `evilrazorpay.com`), userinfo/port/http, injection characters, 500/501 boundary, old keys refused; check.py, npm test, npm run smoke all pass
+
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)
 - [x] GitHub Actions workflow (deno check → npm test → check.py → build → wrangler pages deploy)

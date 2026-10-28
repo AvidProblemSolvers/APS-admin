@@ -132,10 +132,10 @@ describe("settings pane", () => {
     const s = await stateFor(settings, "admin");
     const out = String(settings.render(s, ctxFor("admin")));
     assert.ok(out.includes(">TEST<"));
-    assert.ok(out.includes('name="razorpay_button_id_live"'));
+    assert.ok(out.includes('name="razorpay_payment_url_live"'));
     assert.ok(out.includes('name="scheduler_buffer_minutes"'));
-    const bad = String(settings.render({ ...s, errors: { razorpay_button_id_live: "A Razorpay Payment Button id looks like…" } }, ctxFor("admin")));
-    assert.ok(bad.includes("A Razorpay Payment Button id looks like"));
+    const bad = String(settings.render({ ...s, errors: { razorpay_payment_url_live: "Must be a Razorpay payment page URL" } }, ctxFor("admin")));
+    assert.ok(bad.includes("Must be a Razorpay payment page URL"));
   });
 });
 

@@ -1,4 +1,4 @@
-// 10. Settings — owner, admin. Reads and writes site_settings: the Razorpay Payment Button
+// 10. Settings — owner, admin. Reads and writes site_settings: the Razorpay payment page
 // (Test / Live) and the scheduler's rules. Validation runs here for instant feedback and
 // again, authoritatively, in admin-settings. No audit row is written by the admin for
 // these changes: the database trigger on site_settings records them, attributed through
@@ -20,7 +20,7 @@ function field(def, state, edit) {
   if (def.kind === "enum") {
     control = html`<div class="seg" role="radiogroup" aria-labelledby="${id}-l">${def.options.map((o) => html`<button type="button" role="radio" aria-checked="${v === o}" aria-pressed="${v === o}" data-click="mode" data-v="${o}"${off}>${o.toUpperCase()}</button>`)}</div>`;
   } else {
-    control = html`<input id="${id}" type="${def.kind === "number" ? "number" : "text"}" inputmode="${def.kind === "number" ? "numeric" : "text"}" name="${def.key}" value="${v}" placeholder="${def.placeholder ?? ""}" autocomplete="off" spellcheck="false" data-input="field" aria-invalid="${err ? "true" : "false"}" aria-describedby="${id}-h"${off}>`;
+    control = html`<input id="${id}" type="${def.kind === "number" ? "number" : "text"}" inputmode="${def.kind === "number" ? "numeric" : def.kind === "url" ? "url" : "text"}" name="${def.key}" value="${v}" placeholder="${def.placeholder ?? ""}" autocomplete="off" spellcheck="false" data-input="field" aria-invalid="${err ? "true" : "false"}" aria-describedby="${id}-h"${off}>`;
   }
   return html`<div class="field">
     <label class="label" id="${id}-l" for="${id}">${def.label}</label>
@@ -59,7 +59,7 @@ export default {
     return html`
       <div class="mode-banner ${live ? "live" : ""}">
         <span class="pill ${live ? "warn" : "ok"}">${live ? "LIVE" : "TEST"}</span>
-        <span>The site's Book button is using the <strong>${live ? "Live" : "Test"}-mode</strong> Razorpay button${live ? " — real payments." : " — no real money moves."}</span>
+        <span>The site's Book button is using the <strong>${live ? "Live" : "Test"}-mode</strong> Razorpay payment page${live ? " — real payments." : " — no real money moves."}</span>
       </div>
       ${groups.map((g) => html`<section class="group settings-group"><h2>${g}</h2>
         ${SETTINGS.filter((s) => s.group === g).map((def) => field(def, state, edit))}
@@ -79,7 +79,7 @@ export default {
     "click:mode"(btn, pane, ctx) {
       const v = btn.dataset.v;
       if (v === "live" && pane.state.draft.razorpay_mode !== "live" &&
-        !ctx.confirm("Switch the site to the LIVE Razorpay button? Visitors will be charged real money.")) return;
+        !ctx.confirm("Switch the site to the LIVE Razorpay payment page? Visitors will be charged real money.")) return;
       const draft = { ...pane.state.draft, razorpay_mode: v };
       const { errors } = validateChanges(pane.state.values, Object.fromEntries(changedKeys({ ...pane.state, draft }).map((k) => [k, draft[k]])));
       pane.set({ draft, errors });
