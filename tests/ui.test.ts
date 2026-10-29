@@ -213,4 +213,63 @@ describe("sign-in", () => {
     assert.match(WRONG_DOMAIN, /@avidproblemsolvers\.com/);
     assert.match(String(signIn()), /placeholder="you@avidproblemsolvers\.com"/);
   });
+
+  it("offers a code, not a link, and shows the code field only once a code was requested", () => {
+    const before = String(signIn());
+    assert.match(before, /Email me a sign-in code/);
+    assert.ok(!before.includes("verify-code"));
+    const after = String(signIn({ message: "x", codeFor: "a@avidproblemsolvers.com" }));
+    const field = /<input[^>]*name="code"[^>]*>/.exec(after)?.[0] ?? "";
+    for (const attr of ['inputmode="numeric"', 'autocomplete="one-time-code"', 'maxlength="6"', 'pattern="[0-9]{6}"']) assert.ok(field.includes(attr), attr);
+    assert.match(after, /name="email" value="a@avidproblemsolvers\.com"/);
+    assert.ok(!String(signIn({ codeFor: '"><script>' })).includes("<script>"), "address is escaped");
+  });
+
+  it("verifyCode posts type email to /verify and establishes the session", async () => {
+    const g = globalThis as Record<string, unknown>;
+    g.window = { location: { origin: "https://admin.avidproblemsolvers.com" } };
+    const calls: { url: string; body: unknown }[] = [];
+    g.fetch = async (u: string, init: RequestInit) => {
+      calls.push({ url: u, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ access_token: "at", refresh_token: "rt", expires_in: 3600 }), { status: 200 });
+    };
+    const { verifyCode, hasSession, accessToken, signOut } = await import("../public/js/lib/auth.js");
+    assert.equal(await verifyCode("Known@AvidProblemSolvers.com", " 123 456 "), null);
+    assert.match(calls[0].url, /\/auth\/v1\/verify$/);
+    assert.deepEqual(calls[0].body, { type: "email", email: "known@avidproblemsolvers.com", token: "123456" });
+    assert.ok(hasSession());
+    assert.equal(await accessToken(), "at");
+    g.fetch = async () => new Response("", { status: 204 });
+    await signOut();
+  });
+
+  it("a wrong, expired or unknown-address code gets one plain message", async () => {
+    const g = globalThis as Record<string, unknown>;
+    g.window = { location: { origin: "https://admin.avidproblemsolvers.com" } };
+    const replies = [
+      new Response('{"error_code":"otp_expired","msg":"Token has expired or is invalid"}', { status: 403 }),
+      new Response('{"error_code":"otp_expired","msg":"Token has expired or is invalid"}', { status: 400 }),
+      new Response('{"msg":"User not found"}', { status: 404 }),
+      new Response("not json", { status: 200 }),
+    ];
+    g.fetch = async () => replies.shift();
+    const { verifyCode, hasSession, BAD_CODE } = await import("../public/js/lib/auth.js");
+    for (let i = 0; i < 4; i++) assert.equal(await verifyCode("nobody@avidproblemsolvers.com", "000000"), BAD_CODE);
+    assert.ok(!hasSession());
+    assert.ok(!/exist|unknown|account|authoris/i.test(BAD_CODE));
+  });
+
+  it("verifyCode refuses an off-domain address or a malformed code without contacting the auth service", async () => {
+    const g = globalThis as Record<string, unknown>;
+    g.window = { location: { origin: "https://admin.avidproblemsolvers.com" } };
+    let calls = 0;
+    g.fetch = async () => {
+      calls++;
+      return new Response("{}");
+    };
+    const { verifyCode, WRONG_DOMAIN } = await import("../public/js/lib/auth.js");
+    assert.equal(await verifyCode("boss@example.com", "123456"), WRONG_DOMAIN);
+    for (const c of ["12345", "1234567", "abcdef", ""]) assert.match(String(await verifyCode("a@avidproblemsolvers.com", c)), /six-digit/);
+    assert.equal(calls, 0);
+  });
 });

@@ -7,15 +7,22 @@ import { allowedDomain } from "../shared/email_domain.js";
 
 const logo = html`<img class="gate-logo" src="/APS_LOGO.png" alt="Avid Problem Solvers" width="160" height="100">`;
 
-export function signIn({ message = "", error = "" } = {}) {
+/** `codeFor` is the address a code was just requested for; it adds the code field. */
+export function signIn({ message = "", error = "", codeFor = "" } = {}) {
   return html`<main class="gate">
     ${logo}
     <p class="eyebrow">APS Admin</p>
     <form data-form="send-link" novalidate>
       <label class="field"><span class="label sr-only">Email</span>
-        <input type="email" name="email" required autocomplete="email" placeholder="you${allowedDomain(ALLOWED_EMAIL_DOMAIN)}" aria-label="Email"></label>
-      <button class="btn primary" type="submit">Email me a sign-in link</button>
+        <input type="email" name="email" required autocomplete="email" placeholder="you${allowedDomain(ALLOWED_EMAIL_DOMAIN)}" aria-label="Email" value="${codeFor}"></label>
+      <button class="btn${codeFor ? "" : " primary"}" type="submit">Email me a sign-in code</button>
     </form>
+    ${codeFor ? html`<form data-form="verify-code" novalidate>
+      <input type="hidden" name="email" value="${codeFor}">
+      <label class="field"><span class="label sr-only">Sign-in code</span>
+        <input type="text" class="code" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="six-digit code" aria-label="Sign-in code"></label>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>` : ""}
     <p class="message" role="status">${error ? html`<span class="bad-text">${error}</span>` : message}</p>
   </main>`;
 }

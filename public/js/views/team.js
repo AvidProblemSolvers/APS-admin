@@ -1,4 +1,4 @@
-// 8. Team — owner only. Invite by magic link, change role, deactivate (never delete).
+// 8. Team — owner only. Invite by email, change role, deactivate (never delete).
 
 import { html, raw } from "../lib/html.js";
 import { can } from "../lib/panes.js";
@@ -17,7 +17,7 @@ export default {
         <label class="field"><span class="label">Name</span><input type="text" name="full_name" maxlength="120"></label>
         <label class="field"><span class="label">Role</span><select name="role">${ROLES.map((r) => html`<option${r === "team" ? raw(" selected") : ""}>${r}</option>`)}</select></label>
         <button class="btn primary" type="submit">Send invite</button>
-        <span class="muted">They get a magic link. There is no sign-up anywhere else.</span>
+        <span class="muted">They get an invitation email, then sign in with an emailed code. There is no sign-up anywhere else.</span>
       </form>` : ""}
       <div class="table-wrap"><table class="stack">
         <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>State</th><th>Added</th><th><span class="sr-only">Actions</span></th></tr></thead>

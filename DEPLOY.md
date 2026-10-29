@@ -47,11 +47,26 @@ Also check that the partial unique index on `bookings(slot_start)` for non-cance
   up". The admin never signs anyone up (`create_user: false`); invites go through the admin API,
   which still works with sign-ups off.
 - **Authentication → URL Configuration:** add `https://admin.avidproblemsolvers.com/` to
-  **Redirect URLs**. Magic links and invites return there.
+  **Redirect URLs**. Invites (and any sign-in link that survives a mail scanner) return there.
 - **Authentication → SMTP:** set custom SMTP (Resend: `smtp.resend.com`, port 465, user `resend`,
   password = a Resend API key) with a sender on your verified domain. The built-in sender is
   rate-limited and only delivers to project members.
-- **Email templates:** optionally reword "Magic Link" and "Invite user" so they say APS Admin.
+- **Email OTP length:** Authentication → Sign In / Providers → Email → **Email OTP Length = 6**.
+  The sign-in field accepts exactly six digits.
+- **Email templates → "Magic Link" (required):** the email must carry the code, not a link. Zoho's
+  security scanner opens every URL in incoming mail, and the link and the code are the same
+  single-use OTP, so a link in the email spends the code before the human types it. Replace the
+  body with something like:
+  ```
+  <h2>APS Admin sign-in code</h2>
+  <p>Your code is <strong>{{ .Token }}</strong>. It expires in an hour.</p>
+  <p>If you did not ask for this, ignore this email.</p>
+  ```
+  and remove every `{{ .ConfirmationURL }}` (and any other link) from it. Subject e.g.
+  "Your APS Admin sign-in code".
+- **Email templates → "Invite user":** optionally reword it to say APS Admin. The invite link may
+  also be opened by the scanner; that only confirms the account, after which the invitee signs in
+  with a code as usual.
 - **Owner account:** the owner's row in `team_members` must have `id` = their `auth.users.id`. If
   the owner has no auth user yet: Authentication → Users → **Invite user** with the owner's email,
   then set that user's id on the owner row in `team_members` (or insert the row with that id).

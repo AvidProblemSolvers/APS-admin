@@ -118,6 +118,7 @@ input[aria-invalid=true], textarea[aria-invalid=true] { border-color: var(--bad)
 .gate-logo { width: 160px; height: auto; border-radius: var(--r); }
 .gate form { display: grid; gap: 10px; width: 320px; max-width: calc(100vw - 32px); margin-top: 6px; }
 .gate .message { max-width: 320px; color: var(--muted); }
+.gate input.code { font-variant-numeric: tabular-nums; letter-spacing: .3em; text-align: center; }
 .gate h1 { font-size: 16px; }
 
 /* ---------- shell --------------------------------------------------------- */

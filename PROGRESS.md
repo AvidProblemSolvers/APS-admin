@@ -50,6 +50,15 @@
 - [x] Fields labelled as the Razorpay payment page URL; `razorpay_mode` unchanged
 - [x] Tests: look-alikes (`rzp.io.evil.com`, `evil-rzp.io`, `www.rzp.io`, `razorpay.com.evil.com`, `evilrazorpay.com`), userinfo/port/http, injection characters, 500/501 boundary, old keys refused; check.py, npm test, npm run smoke all pass
 
+## Sign-in by six-digit code (mail scanners spend magic links)
+- [x] After "Email me a sign-in code" succeeds, a code field appears on the same screen (numeric input mode, `autocomplete="one-time-code"`, six digits) for every on-domain address, known or not
+- [x] `verifyCode()` → `POST /auth/v1/verify` `{ type: "email", email, token }`; session saved exactly as the fragment flow saves it
+- [x] Neutral sent message, `create_user: false`, domain check before any request (send and verify) all kept; wrong/expired/unknown-address codes get one plain message
+- [x] URL-fragment sign-in still works (existing sessions, links that survive)
+- [x] Mock GoTrue issues single-use codes and serves `/auth/v1/verify`; codes listed at `/__mock/links`
+- [x] check.py: `/verify` with `type "email"`; code field attributes. Tests: 408 pass. Smoke: 17 steps pass (code sign-in incl. a wrong code first; unknown address gets the field and the same bad-code message)
+- [x] DEPLOY.md: Magic Link template must show `{{ .Token }}` and contain no link; OTP length 6
+
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)
 - [x] GitHub Actions workflow (deno check → npm test → check.py → build → wrangler pages deploy)

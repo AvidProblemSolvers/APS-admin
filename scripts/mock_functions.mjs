@@ -1,8 +1,9 @@
 // Local mock of everything the admin talks to, for offline preview:
 //   - serves dist/ (built with `python3 build.py --mock`) with the production _headers
-//   - GoTrue: /auth/v1/otp (refuses create_user unless false), /token, /logout
+//   - GoTrue: /auth/v1/otp (refuses create_user unless false), /verify (six-digit code,
+//     single use), /token, /logout
 //   - /functions/v1/<name> → the REAL Edge Function handlers on an in-memory database
-// Magic links are printed here instead of emailed. Nothing touches the network.
+// Sign-in codes (and links) are printed here instead of emailed. Nothing touches the network.
 //
 //   node scripts/mock_functions.mjs [--port 8001]
 
@@ -29,6 +30,7 @@ deps.mem.tables.team_members.push({ id: IDS.outsider, email: "boss@example.com",
 deps.fakeAuth.addUser({ id: IDS.outsider, email: "boss@example.com" });
 const refresh = new Map();
 const links = [];
+const codes = new Map(); // email → { code, id }
 
 function linkFor(id) {
   refresh.set(`r-${id}`, id);
@@ -69,13 +71,27 @@ const server = createServer(async (req, res) => {
       if (b.create_user !== false) return send(400, { msg: "mock: the admin must never create users" });
       const user = await deps.fakeAuth.findUserByEmail(String(b.email).toLowerCase());
       if (user) {
+        const code = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+        codes.set(user.email, { code, id: user.id });
         const link = linkFor(user.id);
-        links.unshift({ email: user.email, link, at: new Date().toISOString() });
-        console.log(`\n✉  magic link for ${user.email}:\n   ${link}\n`);
+        links.unshift({ email: user.email, code, link, at: new Date().toISOString() });
+        console.log(`\n✉  sign-in code for ${user.email}: ${code}\n   (or link: ${link})\n`);
       } else {
-        console.log(`\n✉  (no link: ${b.email} has no account — the UI shows the same message either way)\n`);
+        console.log(`\n✉  (no code: ${b.email} has no account — the UI shows the same message either way)\n`);
       }
       return send(200, {});
+    }
+    if (url.pathname === "/auth/v1/verify" && req.method === "POST") {
+      const b = JSON.parse(await body(req));
+      const email = String(b.email).toLowerCase();
+      const issued = codes.get(email);
+      // GoTrue gives one answer for a wrong code, a spent one and an unknown address.
+      if (b.type !== "email" || !issued || issued.code !== String(b.token)) {
+        return send(403, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" });
+      }
+      codes.delete(email);
+      refresh.set(`r-${issued.id}`, issued.id);
+      return send(200, { access_token: deps.fakeAuth.tokenFor(issued.id), refresh_token: `r-${issued.id}`, expires_in: 3600, token_type: "bearer" });
     }
     if (url.pathname === "/auth/v1/token" && req.method === "POST") {
       const b = JSON.parse(await body(req));
@@ -85,7 +101,7 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/auth/v1/logout") return send(204, "");
     if (url.pathname === "/__mock/links") {
-      return send(200, links.map((l) => `${l.at}  ${l.email}\n${l.link}\n`).join("\n") || "No links yet.\n", "text/plain; charset=utf-8");
+      return send(200, links.map((l) => `${l.at}  ${l.email}  code ${l.code}\n${l.link}\n`).join("\n") || "No codes yet.\n", "text/plain; charset=utf-8");
     }
 
     const fn = /^\/functions\/v1\/([a-z-]+)$/.exec(url.pathname)?.[1];
@@ -119,5 +135,5 @@ server.listen(PORT, () => {
   console.log(`\nAPS Admin mock on ${ORIGIN}`);
   console.log("Sign in by pasting one of these into the browser (or request a link from the UI):");
   for (const who of ["owner", "admin", "team", "inactive", "stranger"]) console.log(`  ${who.padEnd(9)} ${linkFor(IDS[who])}`);
-  console.log(`Links requested from the UI are also listed at ${ORIGIN}/__mock/links\n`);
+  console.log(`Codes requested from the UI are also listed at ${ORIGIN}/__mock/links\n`);
 });

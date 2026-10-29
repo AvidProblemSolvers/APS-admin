@@ -137,7 +137,12 @@ for p in files("public/js", {".js"}):
         fail("%s: eval" % rel)
 auth = (ROOT / "public/js/lib/auth.js").read_text()
 if "create_user: false" not in auth:
-    fail("auth.js: magic links must send create_user: false")
+    fail("auth.js: sign-in requests must send create_user: false")
+if not re.search(r'type: "email"', auth) or "/verify" not in auth:
+    fail("auth.js: sign-in codes must be verified at /verify with type \"email\"")
+shell = (ROOT / "public/js/views/shell.js").read_text()
+if 'autocomplete="one-time-code"' not in shell or 'inputmode="numeric"' not in shell:
+    fail("shell.js: the code field needs inputmode=numeric and autocomplete=one-time-code")
 if re.search(r"type=.?password|signUp|/signup", auth):
     fail("auth.js: no password or sign-up path may exist")
 

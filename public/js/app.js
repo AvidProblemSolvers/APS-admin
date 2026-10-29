@@ -1,7 +1,7 @@
 // Controller: auth state → screen. Routing is by hash (#/bookings).
 
 import { api, download, onAuthLost } from "./lib/api.js";
-import { consumeRedirect, hasSession, sendLink, signOut } from "./lib/auth.js";
+import { consumeRedirect, hasSession, NEUTRAL_SENT, sendLink, signOut, verifyCode } from "./lib/auth.js";
 import { canSee, PANES } from "./lib/panes.js";
 import { mountPane } from "./lib/pane.js";
 import { frame, notAuthorised, signIn } from "./views/shell.js";
@@ -32,7 +32,7 @@ function toast(msg, bad = false) {
 function showSignIn(state) {
   me = null;
   app.innerHTML = String(signIn(state));
-  app.querySelector("input[type=email]")?.focus();
+  app.querySelector(state?.codeFor ? "input[name=code]" : "input[type=email]")?.focus();
 }
 
 function showNotAuthorised() {
@@ -76,19 +76,33 @@ async function start() {
 onAuthLost((why) => (why === "not_authorised" ? showNotAuthorised() : showSignIn({ message: "Your session ended. Sign in again." })));
 
 app.addEventListener("submit", async (e) => {
-  const form = e.target.closest("[data-form=send-link]");
+  const form = e.target.closest("[data-form=send-link], [data-form=verify-code]");
   if (!form) return;
   e.preventDefault();
   const email = form.elements.email.value.trim();
   const status = app.querySelector(".message");
+  const btn = form.querySelector("button");
+  if (form.dataset.form === "verify-code") {
+    btn.disabled = true;
+    const error = await verifyCode(email, form.elements.code.value);
+    if (!error) return start();
+    status.textContent = error;
+    btn.disabled = false;
+    form.elements.code.select();
+    return;
+  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     status.textContent = "Enter an email address.";
     return;
   }
-  const btn = form.querySelector("button");
   btn.disabled = true;
-  status.textContent = await sendLink(email);
-  setTimeout(() => (btn.disabled = false), 30_000);
+  const reply = await sendLink(email);
+  // The code field appears for every on-domain address, known or not, so it reveals nothing.
+  if (reply === NEUTRAL_SENT) showSignIn({ message: reply, codeFor: email.toLowerCase() });
+  else status.textContent = reply;
+  const again = app.querySelector("[data-form=send-link] button");
+  again.disabled = true;
+  setTimeout(() => (again.disabled = false), 30_000);
 });
 
 app.addEventListener("click", async (e) => {
@@ -97,6 +111,6 @@ app.addEventListener("click", async (e) => {
   showSignIn({ message: "Signed out." });
 });
 
-// A magic link opened in a tab that already shows the admin only changes the hash.
+// A sign-in link opened in a tab that already shows the admin only changes the hash.
 window.addEventListener("hashchange", () => (/(^#|&)(access_token|error)=/.test(location.hash) ? start() : route()));
 start();

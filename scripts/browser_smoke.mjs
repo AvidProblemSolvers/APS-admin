@@ -89,11 +89,34 @@ try {
   await send("Page.enable");
   await send("Runtime.enable");
 
-  await step("sign-in page offers a magic link and no sign-up", async () => {
+  const BAD_CODE = "That code did not work";
+  const enterCode = (code) => js(`const f=document.querySelector('[data-form=verify-code]'); f.elements.code.value=${JSON.stringify(code)}; f.requestSubmit(); return 1`);
+
+  await step("sign-in page offers a code and no sign-up; an unknown address looks the same", async () => {
     await go(`${ORIGIN}/`);
     await until("document.querySelector('[data-form=send-link]')", "sign-in form");
     await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='nobody@avidproblemsolvers.com'; f.requestSubmit(); return 1");
     await until("document.querySelector('.message').textContent.includes('If that address is authorised')", "neutral message");
+    await until("document.querySelector('[data-form=verify-code] input[autocomplete=one-time-code][inputmode=numeric]')", "code field");
+    if (/link/i.test(await js("return document.querySelector('[data-form=send-link] button').textContent"))) throw new Error("button still offers a link");
+    await enterCode("123456");
+    await until(`document.querySelector('.message').textContent.includes(${JSON.stringify(BAD_CODE)})`, "bad-code message");
+  });
+
+  await step("owner signs in with an emailed code (a wrong code first gets the same plain message)", async () => {
+    await go(`${ORIGIN}/`);
+    await until("document.querySelector('[data-form=send-link]')", "sign-in form");
+    await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='Owner@AvidProblemSolvers.com'; f.requestSubmit(); return 1");
+    await until("document.querySelector('[data-form=verify-code]')", "code field");
+    if (!(await js("return document.activeElement?.name === 'code'"))) throw new Error("code field not focused");
+    const code = /code (\d{6})/.exec(await (await fetch(`${ORIGIN}/__mock/links`)).text())?.[1];
+    if (!code) throw new Error("mock issued no code");
+    await enterCode(code === "000000" ? "111111" : "000000");
+    await until(`document.querySelector('.message').textContent.includes(${JSON.stringify(BAD_CODE)})`, "bad-code message");
+    await enterCode(code);
+    await until("document.querySelectorAll('.tabs a').length === 10", "10 tabs");
+    await click("[data-signout]");
+    await until("document.querySelector('[data-form=send-link]')", "signed out");
   });
 
   await step("sign-in page refuses an off-domain address without requesting a link", async () => {
@@ -102,7 +125,8 @@ try {
     await js("window.__otp = 0; const f0 = window.fetch; window.fetch = (u, i) => (String(u).includes('/otp') && window.__otp++, f0(u, i)); return 1");
     await js("const f=document.querySelector('[data-form=send-link]'); f.elements.email.value='boss@example.com'; f.requestSubmit(); return 1");
     await until("document.querySelector('.message').textContent.includes('Use your @avidproblemsolvers.com address')", "domain message");
-    if (await js("return window.__otp")) throw new Error("an off-domain link was requested");
+    if (await js("return window.__otp")) throw new Error("an off-domain code was requested");
+    if (await js("return document.querySelector('[data-form=verify-code]')")) throw new Error("code field shown for an off-domain address");
   });
 
   await step("page bypassed: an off-domain account with an owner row gets Not authorised", async () => {
@@ -112,7 +136,7 @@ try {
     await js("localStorage.clear(); return 1");
   });
 
-  await step("owner signs in and sees all ten tabs", async () => {
+  await step("a link in the URL fragment still signs the owner in: all ten tabs", async () => {
     await go(`${ORIGIN}/#access_token=token-${ID.owner}&refresh_token=r-${ID.owner}&expires_in=3600`);
     await until("document.querySelectorAll('.tabs a').length === 10", "10 tabs");
     await until("location.hash === '' || location.hash === '#/bookings'", "tokens stripped from URL");
