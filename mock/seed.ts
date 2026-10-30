@@ -98,6 +98,14 @@ export function seed(now: Date = NOW): Record<string, Row[]> {
       { key: "how.method", value: "Methodology is a means, not a mission.", updated_at: h(-300) },
       { key: "offer.price", value: "$1,199", updated_at: h(-300) },
       { key: "offer.cta", value: "Book your hour", updated_at: h(-300) },
+      { key: "answers_index.title", value: "Answers", updated_at: h(-200) },
+      { key: "answers_index.empty_state.title", value: "Nothing here yet", updated_at: h(-200) },
+      { key: "answers_index.empty_state.body", value: "Answers appear here as they are published.", updated_at: h(-200) },
+      { key: "answers_index.categories.buying", value: "Buying", updated_at: h(-200) },
+      { key: "answers_index.categories.running", value: "Running", updated_at: h(-200) },
+      { key: "answers_index.categories.buying.lead", value: "What to know before you hire help.", updated_at: h(-200) },
+      { key: "answers_index.categories.buying.lead.note", value: "Shown under the lead on wide screens.", updated_at: h(-200) },
+      { key: "answers_index.categories.buying.lead.cta.label", value: "Read the guide", updated_at: h(-200) },
     ],
     answers: [
       {

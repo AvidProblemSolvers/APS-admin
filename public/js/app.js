@@ -21,6 +21,7 @@ const VIEWS = Object.fromEntries([bookings, slotRequests, availability, content,
 const app = document.getElementById("app");
 const toastEl = document.getElementById("toast");
 let me = null;
+let mounted = null; // { id, pane } of the pane on screen
 let toastTimer;
 
 function toast(msg, bad = false) {
@@ -43,21 +44,29 @@ function showNotAuthorised() {
 
 function route() {
   if (!me) return;
-  const wanted = location.hash.replace(/^#\/?/, "") || "bookings";
+  // #/<pane>/<sub>: the sub-path belongs to the pane (e.g. the Content section).
+  const [wanted, ...rest] = location.hash.replace(/^#\/?/, "").split("/");
+  let sub = "";
+  try {
+    sub = decodeURIComponent(rest.join("/"));
+  } catch { /* malformed escape: ignore the sub-path */ }
   // A pane this role may not see is never mounted, even if typed into the address bar.
   const id = canSee(me.role, wanted) && VIEWS[wanted] ? wanted : "bookings";
   if (id !== wanted) history.replaceState(null, "", `#/${id}`);
+  // Same pane, new sub-path: tell the mounted pane instead of remounting it.
+  if (mounted?.id === id && mounted.pane.root.isConnected) return mounted.pane.route(sub);
   app.innerHTML = String(frame(me, id));
   document.title = `${PANES.find((p) => p.id === id).title} · APS Admin`;
   const root = document.getElementById("pane");
-  mountPane(root, {
+  mounted = { id, pane: mountPane(root, {
     me,
     role: me.role,
+    sub: id === wanted ? sub : "",
     api,
     download: (fn, body) => download(fn, body).catch((e) => toast(e.message, true)),
     toast,
     confirm: (m) => window.confirm(m),
-  }, VIEWS[id]);
+  }, VIEWS[id]) };
 }
 
 async function start() {

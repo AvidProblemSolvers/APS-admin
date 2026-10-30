@@ -8,6 +8,7 @@ const EVENTS = ["click", "change", "input", "submit"];
 export function mountPane(root, ctx, view) {
   let state = null;
   const self = {
+    root,
     get state() {
       return state;
     },
@@ -23,6 +24,11 @@ export function mountPane(root, ctx, view) {
         const el = root.querySelector(`[data-region="${name}"]`);
         if (el && view.regions?.[name]) el.innerHTML = String(view.regions[name](state, ctx));
       }
+    },
+    /** The part of the hash after the pane id changed (e.g. #/content/<section>). */
+    route(sub) {
+      ctx.sub = sub;
+      view.route?.(sub, self, ctx);
     },
     async reload(keep = {}) {
       try {

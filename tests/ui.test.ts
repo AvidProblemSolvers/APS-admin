@@ -9,7 +9,7 @@ import bookings from "../public/js/views/bookings.js";
 import audit, { diffWords } from "../public/js/views/audit.js";
 import team from "../public/js/views/team.js";
 import settings from "../public/js/views/settings.js";
-import content from "../public/js/views/content.js";
+import content, { buildTree, headingPath, humanize, searchHits } from "../public/js/views/content.js";
 import answers, { summaryNote } from "../public/js/views/answers.js";
 import signals from "../public/js/views/signals.js";
 import traffic from "../public/js/views/traffic.js";
@@ -136,6 +136,47 @@ describe("settings pane", () => {
     assert.ok(out.includes('name="scheduler_buffer_minutes"'));
     const bad = String(settings.render({ ...s, errors: { razorpay_payment_url_live: "Must be a Razorpay payment page URL" } }, ctxFor("admin")));
     assert.ok(bad.includes("Must be a Razorpay payment page URL"));
+  });
+});
+
+describe("content pane", () => {
+  const row = (key: string, value = "x") => ({ key, value, updated_at: "2026-01-01T00:00:00Z" });
+  const rows = ["answers_index.categories.buying.lead", "answers_index.title", "answers_index.categories.buying", "a.b.c.d.e.f", "solo"].map((k) => row(k));
+
+  it("derives labels from segments", () => {
+    assert.equal(humanize("answers_index"), "Answers Index");
+    assert.equal(humanize("EMPTY_STATE"), "Empty State");
+    assert.equal(humanize("h1"), "H1");
+  });
+
+  it("nests one level per dot, to any depth, own fields before groups", () => {
+    const tree = buildTree(rows);
+    assert.deepEqual(tree.map((t: { name: string }) => t.name), ["a", "answers_index", "solo"]);
+    const ai = tree[1];
+    assert.deepEqual(ai.fields.map((r: { key: string }) => r.key), ["answers_index.title"]);
+    const cats = ai.groups[0];
+    assert.equal(cats.label, "Categories");
+    assert.deepEqual(cats.fields.map((r: { key: string }) => r.key), ["answers_index.categories.buying"]);
+    assert.deepEqual(cats.groups[0].fields.map((r: { key: string }) => r.key), ["answers_index.categories.buying.lead"]);
+    let n = tree[0], depth = 0;
+    while (n.groups.length) (n = n.groups[0]), depth++;
+    assert.equal(depth, 4);
+    assert.deepEqual(n.fields.map((r: { key: string }) => r.key), ["a.b.c.d.e.f"]);
+    assert.deepEqual(tree[2].fields.map((r: { key: string }) => r.key), ["solo"]);
+  });
+
+  it("search matches key or current value across sections and reports the heading path", () => {
+    const state = { rows: [row("x.one", "needle"), row("y.needle_key"), row("z.no")], edits: { "z.no": "edited needle" }, q: "NEEDLE" };
+    assert.deepEqual(searchHits(state).map((r: { key: string }) => r.key), ["x.one", "y.needle_key", "z.no"]);
+    assert.deepEqual(headingPath("answers_index.categories.buying.lead"), ["Answers Index", "Categories", "Buying"]);
+    assert.deepEqual(headingPath("solo"), ["Solo"]);
+  });
+
+  it("renders the chosen tab from the hash and keeps the publish notice", () => {
+    const ctx = { ...ctxFor("admin"), sub: "solo" };
+    const out = String(content.render({ ...content.initial(ctx), rows }, ctx));
+    assert.match(out, /href="#\/content\/solo" data-tab="solo" aria-current="page"/);
+    assert.ok(out.includes("Saved edits are not live until you publish."));
   });
 });
 

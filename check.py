@@ -320,6 +320,194 @@ gate = http_src.find("inAllowedDomain(user.email")
 if gate < 0 or gate > http_src.find('"team_members"'):
     fail("_shared/http.ts must check the email domain before the team_members lookup")
 
+# --- Content pane: sections nested by dots -----------------------------------------------------
+# Renders the real view on keys with segment names made up on every run (so no hand-written
+# label table can pass), then checks the HTML: one tab per first segment, every key in exactly
+# one tab at the depth its dots imply, labels derived from segments, search across sections with
+# the heading path, the tab in the URL hash, and the publish notice.
+import json as _json
+import random as _random
+
+
+def _seg(rng):
+    return "%s_%s" % ("".join(rng.choice("bcdfghjklmnpqrstvwxz") for _ in range(5)), "".join(rng.choice("aeiou") for _ in range(3)))
+
+
+def humanize(seg):
+    words = [w for w in re.split(r"[_\-\s]+", seg) if w]
+    return " ".join(w[0].upper() + w[1:].lower() for w in words) if words else (seg or "(blank)")
+
+
+class ContentDom(HTMLParser):
+    """Collects fields with their enclosing heading chain, tab links, headings and hits."""
+
+    def __init__(self):
+        super().__init__()
+        self.stack, self.fields, self.tabs, self.heads, self.hits = [], [], [], [], []
+        self.groups, self.capture, self.buf = [], None, ""
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        cls = (a.get("class") or "").split()
+        if tag not in VOID:
+            self.stack.append((tag, cls, a))
+        if tag == "section" and "cgroup" in cls:
+            self.groups.append({"path": a.get("data-path"), "depth": int(a.get("data-depth", 0)), "head": None})
+        if tag == "label" and "content-field" in cls:
+            self.fields.append({"key": a.get("data-key"), "chain": [g["path"] for g in self.groups], "fname": None,
+                                "hit": self.hits[-1] if self.hits and self.hits[-1]["open"] else None})
+        if tag == "a" and a.get("data-tab") is not None:
+            self.tabs.append({"name": a["data-tab"], "href": a.get("href"), "current": a.get("aria-current") == "page", "text": ""})
+            self.capture, self.buf = "tab", ""
+        if "cg-head" in cls:
+            self.capture, self.buf = "head", ""
+            self.heads.append({"level": a.get("aria-level"), "role": a.get("role"), "group": self.groups[-1] if self.groups else None})
+        if "crumb" in cls and self.capture == "head":
+            self.capture = "crumb"
+        if "fname" in cls:
+            self.capture, self.buf = "fname", ""
+        if "hit" in cls and tag == "div":
+            self.hits.append({"open": True, "path": None})
+        if "hit-path" in cls:
+            self.hits[-1]["path"] = a.get("data-hit-path")
+            self.capture, self.buf = "hitpath", ""
+
+    def handle_endtag(self, tag):
+        if not self.stack:
+            return
+        t, cls, a = self.stack.pop()
+        if self.capture == "crumb" and "crumb" in cls:
+            self.capture = "head"
+            return
+        if self.capture == "tab" and t == "a":
+            self.tabs[-1]["text"] = self.buf
+            self.capture = None
+        elif self.capture == "head" and "cg-head" in cls:
+            self.heads[-1]["text"] = self.buf.strip()
+            if self.groups:
+                self.groups[-1]["head"] = self.buf.strip()
+            self.capture = None
+        elif self.capture == "fname" and "fname" in cls:
+            self.fields[-1]["fname"] = self.buf.strip()
+            self.capture = None
+        elif self.capture == "hitpath" and "hit-path" in cls:
+            self.hits[-1]["text"] = self.buf.strip()
+            self.capture = None
+        if t == "section" and "cgroup" in cls:
+            self.groups.pop()
+        if t == "div" and "hit" in cls:
+            self.hits[-1]["open"] = False
+
+    def handle_data(self, d):
+        if self.capture in ("tab", "head", "fname", "hitpath"):
+            self.buf += d
+
+
+def content_problems(renders, rows, q_value, q_key):
+    """renders: {"tabs": {name: html}, "initial": {name: tabState}, "search": html, "notice": bool}."""
+    out = []
+    keys = [r["key"] for r in rows]
+    firsts = sorted({k.split(".")[0] for k in keys})
+    seen = {}
+    for name, page in renders["tabs"].items():
+        d = ContentDom()
+        d.feed(page)
+        if sorted(t["name"] for t in d.tabs) != firsts:
+            out.append("content: tab row must have exactly one tab per first segment %s, got %s" % (firsts, [t["name"] for t in d.tabs]))
+        for t in d.tabs:
+            if t["href"] != "#/content/" + t["name"]:
+                out.append("content: tab %s must link to #/content/%s (the URL hash), got %s" % (t["name"], t["name"], t["href"]))
+            if not t["text"].strip().startswith(humanize(t["name"])):
+                out.append("content: tab label for %s must be derived from the segment (%r), got %r" % (t["name"], humanize(t["name"]), t["text"]))
+        cur = [t["name"] for t in d.tabs if t["current"]]
+        if cur != [name]:
+            out.append("content: selecting tab %s must mark it current, got %s" % (name, cur))
+        for f in d.fields:
+            segs = f["key"].split(".")
+            seen.setdefault(f["key"], []).append(name)
+            if segs[0] != name:
+                out.append("content: %s rendered under tab %s" % (f["key"], name))
+            want = [".".join(segs[:i]) for i in range(2, len(segs))]
+            if f["chain"] != want:
+                out.append("content: %s must sit under headings %s (depth %d), got %s" % (f["key"], want, len(want), f["chain"]))
+            if f["fname"] != humanize(segs[-1]):
+                out.append("content: field label for %s must be %r (derived), got %r" % (f["key"], humanize(segs[-1]), f["fname"]))
+        for h in d.heads:
+            g = h["group"]
+            if not g:
+                continue
+            own = humanize(g["path"].split(".")[-1])
+            if not h.get("text", "").endswith(own):
+                out.append("content: heading for %s must be labelled %r (derived), got %r" % (g["path"], own, h.get("text")))
+            if h["role"] != "heading" or h["level"] != str(g["depth"] + 2):
+                out.append("content: heading for %s needs role=heading aria-level=%d" % (g["path"], g["depth"] + 2))
+        # Fields with no further segments come before the first nested group.
+        top = [k for k in keys if k.split(".")[0] == name and len(k.split(".")) <= 2]
+        order = [f["key"] for f in d.fields]
+        if order[:len(top)] != sorted(top):
+            out.append("content: tab %s must list its own fields first (%s), got %s" % (name, sorted(top), order[:len(top)]))
+    for k in keys:
+        if len(seen.get(k, [])) != 1:
+            out.append("content: %s must be reachable from exactly one tab, found in %s" % (k, seen.get(k, [])))
+    deep = [k for k in keys if len(k.split(".")) >= 5]
+    if not deep:
+        out.append("content: guard needs a key five segments deep")
+    for name, tab in renders["initial"].items():
+        if tab != name:
+            out.append("content: #/content/%s must restore tab %s on load, got %r" % (name, name, tab))
+    s = ContentDom()
+    s.feed(renders["search"])
+    page = renders["search"]
+    if page.find('data-input="search"') < 0 or page.find('data-input="search"') > page.find('class="subtabs"'):
+        out.append("content: the search box must render above the tab row")
+    hit_keys = sorted(f["key"] for f in s.fields)
+    if hit_keys != sorted([q_value, q_key]):
+        out.append("content: search must match by key and by value across all sections: want %s, got %s" % (sorted([q_value, q_key]), hit_keys))
+    for f in s.fields:
+        segs = f["key"].split(".")
+        want = " › ".join(humanize(x) for x in segs[:max(1, len(segs) - 1)])
+        if not f["hit"] or f["hit"]["path"] != want or f["hit"].get("text") != want:
+            out.append("content: search hit %s must show its section and heading path %r" % (f["key"], want))
+    if not renders["notice"]:
+        out.append('content: the "Saved edits are not live until you publish." notice is missing')
+    return out
+
+
+_rng = _random.Random()
+_A, _B, _C, _D, _E, _F, _T = (_seg(_rng) for _ in range(7))
+_keys = ["%s.title" % _A, "%s.%s" % (_A, _B), "%s.%s.%s" % (_A, _C, _D), "%s.%s.%s.%s" % (_A, _C, _D, _E),
+         "%s.%s.%s.%s.%s" % (_A, _C, _D, _E, _F), "%s.%s.%s.%s.%s.leaf" % (_A, _C, _D, _E, _F), "%s.%s.zz" % (_A, _C),
+         "%s.%s" % (_B, _T), _C, "%s.%s.%s" % (_D.upper(), _E.upper(), _F.upper())]
+_rows = [{"key": k, "value": "copy for %d" % i, "updated_at": "2026-01-01T00:00:00Z"} for i, k in enumerate(_keys)]
+_rows[3]["value"] = "text with %s inside" % _T.upper()  # matches by value only; _B.<T> matches by key
+r = subprocess.run(["node", "--input-type=module", "-e", """
+import view from "./public/js/views/content.js";
+const [rows, q] = [JSON.parse(process.argv[1]), process.argv[2]];
+const ctx = { role: "owner", me: { role: "owner" } };
+const at = (sub, extra = {}) => ({ ...view.initial({ ...ctx, sub }), rows, ...extra });
+const tabs = {}, initial = {};
+for (const n of new Set(rows.map((r) => r.key.split(".")[0]))) {
+  // The tab's own link is what lands in the hash; read it back the way the router does.
+  const href = [...String(view.render(at(n), ctx)).matchAll(/href="#\\/content\\/([^"]+)" data-tab="([^"]+)"/g)].find((m) => m[2] === n)?.[1];
+  const sub = href === undefined ? "" : decodeURIComponent(href);
+  initial[n] = view.initial({ ...ctx, sub }).tab;
+  tabs[n] = String(view.render(at(sub), { ...ctx, sub }));
+}
+const search = String(view.render(at("", { q }), ctx));
+console.log(JSON.stringify({ tabs, initial, search, notice: search.includes("Saved edits are not live until you publish.") }));
+""", _json.dumps(_rows), _T], cwd=ROOT, capture_output=True, text=True)
+if r.returncode:
+    fail("content.js: could not render for the nesting check: %s" % r.stderr.strip()[-400:])
+else:
+    for msg in content_problems(_json.loads(r.stdout), _rows, _keys[3], "%s.%s" % (_B, _T)):
+        fail(msg)
+app_js = (ROOT / "public/js/app.js").read_text()
+if "mounted.pane.route(sub)" not in app_js or "decodeURIComponent(rest" not in app_js or "sub: id === wanted ? sub" not in app_js:
+    fail("app.js: #/<pane>/<sub> must reach the pane (initial ctx.sub, and pane.route on a hash change without remounting)")
+if not re.search(r"route\(sub, pane\)\s*\{[^}]*tab: sub", (ROOT / "public/js/views/content.js").read_text()):
+    fail("content.js: a hash change must switch the section tab (route(sub, pane) → tab: sub)")
+
+
 # --- Edge Functions ----------------------------------------------------------------------------
 fn_dirs = [d for d in (ROOT / "supabase/functions").iterdir() if d.is_dir() and not d.name.startswith("_")]
 registry = (ROOT / "mock/functions.ts").read_text()

@@ -79,3 +79,11 @@
 
 ## BLOCKED
 (none — deploying, secrets, DNS and the Supabase dashboard are the user's by design; see DEPLOY.md)
+
+## Pane timing and Content sections (2026-10-30)
+- [x] `scripts/measure_panes.mjs`: real-browser timing of every tab (first visit, revisit): click → data paint, calls per click, serial/parallel. Mock gained `--latency-ms` / `--cold-ms` to model server time (default 0)
+- [x] Content pane: every dot is one nesting level, to any depth — first segment = section tab, middle segments = headings (indented, own rule, ancestor crumbs), last = field. Own fields first, then groups A–Z. Labels derived from segments
+- [x] Content search above the tab row: key or text, across every section, each hit shows its section › heading path
+- [x] Section in the hash (`#/content/<section>`); router hands the sub-path to the open pane instead of remounting it, so unsaved edits survive a tab switch
+- [x] check.py guards (random segment names each run): one tab per first segment; every key in exactly one tab at its dot depth; labels derived; own fields first; search across sections with heading path; search box above tabs; hash round-trip; publish notice. 18 mutations, all fail check.py
+- [x] Smoke: 20 steps pass (nesting depth and indentation, search keeps focus, edit survives tab switch, tab survives reload)

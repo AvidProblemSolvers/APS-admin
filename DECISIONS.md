@@ -50,3 +50,12 @@
 - The light theme adds colours beyond the CLAUDE.md palette (darkened teal, amber and coral for contrast on near-white); check.py still pins the dark `:root` block to the CLAUDE.md palette.
 - The "Admin" eyebrow in the header is hidden below 400px so the theme toggle fits on the narrowest phones.
 - The logo PNG is unchanged in light mode (rule 1); it keeps its own dark-teal background.
+- Content sections: tab and heading order is plain code-point order of the raw segment (so `ANSWERS_INDEX` sorts before `answers_index`); fields within a level likewise by key.
+- A key that is also a prefix of others (`a.b` and `a.b.c`) shows `a.b` as a field at its own level and `a.b.c` under a "B" heading — both kept, nothing merged.
+- A single-segment key (`solo`) gets its own tab "Solo" holding one field "Solo".
+- Content section lives in the hash as `#/content/<segment>` (URI-encoded). An unknown or empty section falls back to the first tab without rewriting the hash.
+- While a content search is active no section tab is marked current; clicking a tab or a hit's path clears the search and opens that section.
+- Section tabs show the key count and, in warn colour, the number of unsaved edits in that section (edits are pane-wide, so they would otherwise be invisible from another tab).
+- Headings use role="heading" with aria-level = depth + 2 (unbounded) rather than h3–h6, so depth beyond four still has a correct level.
+- Measuring used Chrome over the DevTools protocol (as browser_smoke.mjs does), not Playwright: Playwright is not a project dependency and the only installs on this machine are outside this folder.
+- Mock seed gained answers_index.* keys up to six segments deep, so the nesting is visible locally.

@@ -268,7 +268,34 @@ td.actions { white-space: nowrap; text-align: right; }
 .group > h2 { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .content-field { display: grid; gap: 4px; }
 .content-field .row { display: flex; justify-content: space-between; gap: 8px; }
+.content-field .fname { font-weight: 500; color: var(--text); }
+.content-field .fkey { font-family: var(--mono); font-size: 10px; color: var(--text-muted); overflow-wrap: anywhere; }
 .content-field.changed textarea { border-color: var(--accent); }
+.content-search input { width: 100%; max-width: 520px; }
+.subtabs { display: flex; flex-wrap: wrap; gap: 2px 4px; border-bottom: 1px solid var(--border); }
+.subtabs a {
+  padding: 7px 8px 6px; white-space: nowrap; text-decoration: none;
+  color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.subtabs a:hover { color: var(--text); }
+.subtabs a[aria-current=page] { color: var(--accent-fg); border-bottom-color: var(--accent); }
+.subtabs .n { margin-left: 6px; letter-spacing: 0; opacity: .7; }
+.subtabs .dirty { margin-left: 4px; letter-spacing: 0; color: var(--warn); }
+/* Each heading level steps in once more and draws its own rule, so depth reads at a glance. */
+.ctree, .cgroup { display: grid; gap: 12px; align-content: start; }
+.cgroup { margin-left: 2px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
+.cg-head {
+  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-fg);
+}
+.cgroup .cgroup > .cg-head { color: var(--text); font-size: 10px; }
+.cgroup .cgroup .cgroup > .cg-head { color: var(--text-muted); }
+.cg-head .crumb { color: var(--text-muted); opacity: .75; }
+.hit { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+.hit-path { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-fg); text-decoration: none; }
+.hit-path:hover { text-decoration: underline; }
 .savebar {
   position: sticky; bottom: 0; z-index: 8;
   display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
@@ -340,6 +367,7 @@ td.actions { white-space: nowrap; text-align: right; }
   .split, .editor .row2, .diff { grid-template-columns: 1fr; }
   .week-row { grid-template-columns: 1fr; }
   .savebar { margin: 0 -12px -12px; padding: 10px 12px; }
+  .cgroup { padding-left: 10px; }
   .table-wrap { border: 0; overflow: visible; }
   table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }

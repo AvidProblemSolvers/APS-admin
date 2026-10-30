@@ -5,7 +5,10 @@
 //   - /functions/v1/<name> → the REAL Edge Function handlers on an in-memory database
 // Sign-in codes (and links) are printed here instead of emailed. Nothing touches the network.
 //
-//   node scripts/mock_functions.mjs [--port 8001]
+//   node scripts/mock_functions.mjs [--port 8001] [--latency-ms N] [--cold-ms N]
+//
+// --latency-ms delays every function reply by N ms; --cold-ms adds N more to the first call
+// of each function, to model Edge Function round trips and cold starts. Both default to 0.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, statSync } from "node:fs";
@@ -19,6 +22,10 @@ import { serve } from "../supabase/functions/_shared/http.ts";
 const ROOT = resolve(import.meta.dirname, "..");
 const PORT = Number(process.argv[process.argv.indexOf("--port") + 1]) || 8001;
 const ORIGIN = `http://localhost:${PORT}`;
+const flag = (name) => (process.argv.includes(name) ? Number(process.argv[process.argv.indexOf(name) + 1]) || 0 : 0);
+const LATENCY_MS = flag("--latency-ms");
+const COLD_MS = flag("--cold-ms");
+const warm = new Set();
 
 execFileSync("python3", ["build.py", "--mock", "--mock-origin", ORIGIN], { cwd: ROOT, stdio: "inherit" });
 const DIST = join(ROOT, "dist");
@@ -109,6 +116,9 @@ const server = createServer(async (req, res) => {
       const spec = FUNCTIONS[fn];
       if (!spec) return send(404, { error: "no such function" });
       const raw = req.method === "POST" ? await body(req) : undefined;
+      const delay = LATENCY_MS + (warm.has(fn) ? 0 : COLD_MS);
+      warm.add(fn);
+      if (delay) await new Promise((r) => setTimeout(r, delay));
       const request = new Request(url, { method: req.method, headers: { ...req.headers, "cf-ipcountry": "IN" }, body: raw });
       const r = await serve(spec, request, deps);
       res.writeHead(r.status, Object.fromEntries(r.headers));

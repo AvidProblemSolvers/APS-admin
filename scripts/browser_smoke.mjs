@@ -156,8 +156,41 @@ try {
     if (!(await js("return document.activeElement?.name === 'q'"))) throw new Error("search lost focus");
   });
 
+  await step("content: sections nested by every dot, search across sections, tab survives reload", async () => {
+    await tab("content", "document.querySelector('.subtabs a[aria-current=page]')");
+    const tabs = await js("return [...document.querySelectorAll('.subtabs a')].map((a) => a.dataset.tab).join(',')");
+    if (tabs !== "answers_index,hero,how,offer,what") throw new Error(`tabs: ${tabs}`);
+    if ((await js("return document.querySelector('.subtabs a[data-tab=answers_index]').firstChild.textContent")) !== "Answers Index") throw new Error("tab label not derived");
+    // Top-level fields first, no heading above them; then Categories › Buying › Lead › Cta, four deep.
+    if ((await js("return document.querySelector('.ctree > .content-field')?.dataset.key")) !== "answers_index.title") throw new Error("Title is not first");
+    const deep = await js("const l = document.querySelector('[data-key=\"answers_index.categories.buying.lead.cta.label\"]'); let n = 0, p = l; while ((p = p.parentElement.closest('.cgroup'))) n++; return n + ' ' + l.querySelector('.fname').textContent");
+    if (deep !== "4 Label") throw new Error(`six-segment key: ${deep}`);
+    const d2 = await js("return document.querySelector('[data-path=\"answers_index.categories.buying\"]').getBoundingClientRect().left");
+    const d3 = await js("return document.querySelector('[data-path=\"answers_index.categories.buying.lead\"]').getBoundingClientRect().left");
+    if (!(d3 > d2)) throw new Error("depth 3 is not indented past depth 2");
+    // An unsaved edit survives switching tabs (the pane is not remounted).
+    await js("const t=document.querySelector('textarea[data-key=\"answers_index.title\"]'); t.value='Answers!'; t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await click(".subtabs a[data-tab=hero]");
+    await until("location.hash === '#/content/hero' && document.querySelector('[data-key=\"hero.h1\"]')", "hero tab");
+    if (!(await js("return document.querySelector('[data-region=savebar]').innerText.includes('1 unsaved')"))) throw new Error("edit lost on tab switch");
+    await click("[data-click=discard]");
+    // Search: one query, hits from two sections, each with its heading path.
+    await js("const i=document.querySelector('[data-input=search]'); i.focus(); i.value='buy'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await until("document.querySelectorAll('.hit').length === 4", "4 hits");
+    if (!(await js("return document.activeElement?.dataset.input === 'search'"))) throw new Error("search lost focus");
+    const path = await js("return document.querySelector('.hit:has([data-key=\"answers_index.categories.buying.lead.note\"]) .hit-path').textContent");
+    if (path !== "Answers Index › Categories › Buying › Lead") throw new Error(`hit path: ${path}`);
+    await js("const i=document.querySelector('[data-input=search]'); i.value='Methodology'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await until("document.querySelector('.hit .hit-path')?.textContent === 'How'", "value hit in How");
+    await send("Page.reload");
+    await sleep(300);
+    await until("document.querySelector('.subtabs a[aria-current=page]')?.dataset.tab === 'hero'", "hero tab after reload");
+    if (!(await js("return document.querySelector('[data-region=savebar]').innerText.includes('Saved edits are not live until you publish.')"))) throw new Error("publish notice missing");
+  });
+
   await step("content: edit, save (audited), publish to Live", async () => {
-    await tab("content", "document.querySelector('[data-key=\"offer.cta\"] textarea')");
+    await js("window.confirm = () => true; location.hash = '#/content/offer'; return 1");
+    await until("document.querySelector('[data-key=\"offer.cta\"] textarea')", "offer tab");
     await js("const t=document.querySelector('textarea[data-key=\"offer.cta\"]'); t.value='Book an hour'; t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await until("document.querySelector('[data-region=savebar]').innerText.includes('1 unsaved')", "unsaved count");
     await click("[data-click=save]");
