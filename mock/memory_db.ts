@@ -7,7 +7,8 @@ import { DbError } from "../supabase/functions/_shared/errors.ts";
 import type { Db, Row, SelectOpts, Where } from "../supabase/functions/_shared/types.ts";
 
 export const SCHEMA: Record<string, string[]> = {
-  site_content: ["key", "value", "updated_at"],
+  // sort_order is nullable and may not exist yet: the admin never names it in a query.
+  site_content: ["key", "value", "updated_at", "sort_order"],
   site_settings: ["key", "value", "updated_at", "updated_by"],
   answers: ["id", "slug", "title", "summary", "body_md", "question", "related", "published", "created_at", "updated_at"],
   bookings: [

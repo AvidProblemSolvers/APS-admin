@@ -24,7 +24,10 @@ export function mountPane(root, ctx, view) {
       state = { ...state, ...next };
       for (const name of regions) {
         const el = root.querySelector(`[data-region="${name}"]`);
-        if (el && view.regions?.[name]) el.innerHTML = String(view.regions[name](state, ctx));
+        if (el && view.regions?.[name]) {
+          el.innerHTML = String(view.regions[name](state, ctx));
+          view.after?.(el);
+        }
       }
     },
     /** The part of the hash after the pane id changed (e.g. #/content/<section>). */
@@ -45,6 +48,7 @@ export function mountPane(root, ctx, view) {
 
   function draw() {
     root.innerHTML = String(view.render(state, ctx));
+    view.after?.(root);
   }
 
   for (const type of EVENTS) {

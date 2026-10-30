@@ -7,6 +7,9 @@ import type { Ctx, FunctionSpec } from "../_shared/types.ts";
 
 const MAX_VALUE = 10_000;
 
+// Every column (select *), ordered by key only: the nullable display-order column reaches the
+// pane when the site has added it, and naming it here would break an unmigrated database.
+// The pane orders by it.
 async function list(ctx: Ctx) {
   const rows = await ctx.deps.db.selectAll("site_content", { order: [["key", "asc"]] });
   return { rows };

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { generateSlots, schedulerSettings, zonedToUtc } from "../supabase/functions/_shared/slots.ts";
+import { SCHEMA } from "../mock/memory_db.ts";
 import { auditInserts, call, fresh, IDS, NOW } from "./helpers.ts";
 
 type R = Record<string, unknown>;
@@ -202,6 +203,22 @@ describe("content", () => {
       ["hero.eyebrow", "OPERATIONS CONSULTING", "NEW EYEBROW"],
       ["offer.price", "$1,199", "$1,299"],
     ]);
+  });
+
+  it("lists and saves against a database with no sort_order column", async () => {
+    const cols = SCHEMA.site_content;
+    SCHEMA.site_content = cols.filter((c) => c !== "sort_order");
+    try {
+      const deps = fresh();
+      for (const r of deps.mem.tables.site_content) delete r.sort_order;
+      const list = await call(deps, "admin-content", "admin", { action: "list" });
+      assert.equal(list.status, 200);
+      assert.ok((list.json.rows as R[]).every((r) => !("sort_order" in r)));
+      const r = await call(deps, "admin-content", "admin", { action: "save", changes: { "home.probe.button": "Read now", "home.probe.link": "Go →" } });
+      assert.deepEqual(r.json.updated, ["home.probe.button", "home.probe.link"]);
+    } finally {
+      SCHEMA.site_content = cols;
+    }
   });
 
   it("refuses unknown keys and empty copy, writing nothing", async () => {

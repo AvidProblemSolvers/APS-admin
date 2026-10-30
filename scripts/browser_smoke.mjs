@@ -178,19 +178,21 @@ try {
   await step("content: sections nested by every dot, search across sections, tab survives reload", async () => {
     await tab("content", "document.querySelector('.subtabs a[aria-current=page]')");
     const tabs = await js("return [...document.querySelectorAll('.subtabs a')].map((a) => a.dataset.tab).join(',')");
-    if (tabs !== "answers_index,hero,how,offer,what") throw new Error(`tabs: ${tabs}`);
+    if (tabs !== "hero,home,what,how,offer,answers_index") throw new Error(`tabs not in sort_order: ${tabs}`);
     if ((await js("return document.querySelector('.subtabs a[data-tab=answers_index]').firstChild.textContent")) !== "Answers Index") throw new Error("tab label not derived");
+    await click(".subtabs a[data-tab=answers_index]");
+    await until("document.querySelector('.subtabs a[aria-current=page]')?.dataset.tab === 'answers_index'", "answers index tab");
     // Top-level fields first, no heading above them; then Categories › Buying › Lead › Cta, four deep.
-    if ((await js("return document.querySelector('.ctree > .content-field')?.dataset.key")) !== "answers_index.title") throw new Error("Title is not first");
-    const deep = await js("const l = document.querySelector('[data-key=\"answers_index.categories.buying.lead.cta.label\"]'); let n = 0, p = l; while ((p = p.parentElement.closest('.cgroup'))) n++; return n + ' ' + l.querySelector('.fname').textContent");
-    if (deep !== "4 Label") throw new Error(`six-segment key: ${deep}`);
+    if ((await js("return document.querySelector('.ctree > .cfields textarea')?.value.split('\\n')[0]")) !== "Title: Answers") throw new Error("Title is not first");
+    const deep = await js("const l = document.querySelector('textarea[data-group=\"answers_index.categories.buying.lead.cta\"]'); let n = 0, p = l; while ((p = p.parentElement.closest('.cgroup'))) n++; return n + ' ' + l.value");
+    if (deep !== "4 Label: Read the guide") throw new Error(`six-segment key: ${deep}`);
     const d2 = await js("return document.querySelector('[data-path=\"answers_index.categories.buying\"]').getBoundingClientRect().left");
     const d3 = await js("return document.querySelector('[data-path=\"answers_index.categories.buying.lead\"]').getBoundingClientRect().left");
     if (!(d3 > d2)) throw new Error("depth 3 is not indented past depth 2");
     // An unsaved edit survives switching tabs (the pane is not remounted).
-    await js("const t=document.querySelector('textarea[data-key=\"answers_index.title\"]'); t.value='Answers!'; t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await js("const t=document.querySelector('textarea[data-group=answers_index]'); t.value=t.value.replace('Title: Answers', 'Title: Answers!'); t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await click(".subtabs a[data-tab=hero]");
-    await until("location.hash === '#/content/hero' && document.querySelector('[data-key=\"hero.h1\"]')", "hero tab");
+    await until("location.hash === '#/content/hero' && document.querySelector('[data-group=hero]')", "hero tab");
     if (!(await js("return document.querySelector('[data-region=savebar]').innerText.includes('1 unsaved')"))) throw new Error("edit lost on tab switch");
     await click("[data-click=discard]");
     // Search: one query, hits from two sections, each with its heading path.
@@ -202,17 +204,48 @@ try {
     await js("const i=document.querySelector('[data-input=search]'); i.value='Methodology'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await until("document.querySelector('.hit .hit-path')?.textContent === 'How'", "value hit in How");
     await click(".subtabs a[data-tab=hero]");
-    await until("!document.querySelector('.hit') && document.querySelector('[data-input=search]').value === '' && document.querySelector('[data-key=\"hero.h1\"]')", "current tab clears the search");
+    await until("!document.querySelector('.hit') && document.querySelector('[data-input=search]').value === '' && document.querySelector('[data-group=hero]')", "current tab clears the search");
     await send("Page.reload");
     await sleep(300);
     await until("document.querySelector('.subtabs a[aria-current=page]')?.dataset.tab === 'hero'", "hero tab after reload");
     if (!(await js("return document.querySelector('[data-region=savebar]').innerText.includes('Saved edits are not live until you publish.')"))) throw new Error("publish notice missing");
   });
 
+  await step("content: one textarea per group; two lines edited and saved change exactly those two keys", async () => {
+    await js("location.hash = '#/content/home'; return 1");
+    await until("document.querySelector('textarea[data-group=\"home.probe\"]')", "home tab");
+    const keys = await js("return document.querySelector('textarea[data-group=\"home.probe\"]').dataset.keys");
+    const area = "document.querySelector('textarea[data-group=\"home.probe\"]')";
+    const lines = await js(`return ${area}.value`);
+    const want = "Label: WHICH KIND IS YOURS?\nButton: Read it\nLink: Bring it to an hour →\nMin Chars: 10\nMin Chars Context: 3\nHint: Name it plainly: what breaks, and when.";
+    if (lines !== want) throw new Error(`group text: ${JSON.stringify(lines)}`);
+    if (!(await js("return document.querySelector('[data-alone=\"home.probe.examples\"] textarea')?.value.includes('\\n')"))) throw new Error("the multi-line field is not on its own");
+    const overflow = await js("return [...document.querySelectorAll('textarea.autosize')].filter((t) => t.scrollHeight > t.clientHeight).length");
+    if (overflow) throw new Error(`${overflow} textarea(s) need an inner scrollbar`);
+    const server = async () => JSON.parse(await js("const { api } = await import('/js/lib/api.js'); return JSON.stringify(Object.fromEntries((await api('admin-content', { action: 'list' })).rows.filter((r) => r.key.startsWith('home.probe.')).map((r) => [r.key, r.value])))"));
+    const before = await server();
+    const type = (text) => js(`const t=${area}; t.value=${JSON.stringify(text)}; t.dispatchEvent(new Event('input',{bubbles:true})); return 1`);
+    // A mistyped label shows the problem and holds the save; nothing reaches the server.
+    await type(want.replace("Button: Read it", "Buton: Read it"));
+    await until("document.querySelector('[data-errors=\"home.probe\"]').textContent.includes('“Buton” is not a field')", "inline error");
+    await until("document.querySelector('[data-errors=\"home.probe\"]').textContent.includes('“Button” is missing')", "missing label named");
+    if (!(await js("return document.querySelector('[data-click=save]').disabled"))) throw new Error("save enabled with only an invalid group");
+    // Fix it, edit two lines, save.
+    await type(want.replace("Button: Read it", "Button: Read now").replace("Min Chars: 10", "Min Chars: 12"));
+    await until("document.querySelector('[data-errors=\"home.probe\"]').textContent === '' && document.querySelector('[data-region=savebar]').innerText.includes('2 unsaved')", "2 unsaved");
+    await click("[data-click=save]");
+    await until("document.getElementById('toast').textContent.includes('Saved 2 fields')", "saved toast");
+    const after = await server();
+    const moved = Object.keys(before).filter((k) => before[k] !== after[k]).sort().join(",");
+    if (moved !== "home.probe.button,home.probe.min_chars") throw new Error(`keys changed: ${moved}`);
+    if (after["home.probe.button"] !== "Read now" || after["home.probe.min_chars"] !== "12") throw new Error(`values: ${JSON.stringify(after)}`);
+    if ((await js("return document.querySelector('textarea[data-group=\"home.probe\"]').dataset.keys")) !== keys) throw new Error("group keys changed after save");
+  });
+
   await step("content: edit, save (audited), publish to Live", async () => {
     await js("window.confirm = () => true; location.hash = '#/content/offer'; return 1");
-    await until("document.querySelector('[data-key=\"offer.cta\"] textarea')", "offer tab");
-    await js("const t=document.querySelector('textarea[data-key=\"offer.cta\"]'); t.value='Book an hour'; t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
+    await until("document.querySelector('textarea[data-group=offer]')", "offer tab");
+    await js("const t=document.querySelector('textarea[data-group=offer]'); t.value=t.value.replace('Cta: Book your hour', 'Cta: Book an hour'); t.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await until("document.querySelector('[data-region=savebar]').innerText.includes('1 unsaved')", "unsaved count");
     await click("[data-click=save]");
     await until("document.getElementById('toast').textContent.includes('Saved 1 field')", "saved toast");

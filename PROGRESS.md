@@ -91,3 +91,12 @@
 - [x] Pane data cached in memory for the session (`lib/cache.js`): revisit within 30 s → no request; older → paints from memory, refreshes in the background (repaints only if changed and untouched); any write, sign-in and sign-out clear it; loads that began before a write are discarded. Revisit data paint 265 ms → 10–40 ms (modelled), 0 calls
 - [x] Rejected by the numbers: skeleton (first paint already ~10 ms), parallel fetches (one call per tab)
 - [x] Smoke: 22 steps pass (revisit makes no request; a write makes Audit fetch again — fails if invalidation is removed)
+
+## Content: group textareas, website order, tab weight (2026-10-30)
+- [x] Each heading's own single-line fields are ONE textarea, "Label: value" per line, parsed back into the individual keys on save; heading, field count, latest Updated, full keys in small type under it; grows to fit, no inner scrollbar
+- [x] Unknown, duplicated or missing label, or a line with no label: error named inline above the group, that group's save held (others still save); nothing dropped or invented
+- [x] Values with line breaks (and colon or shared labels) render as their own field below the group with the reason
+- [x] Order by sort_order (nulls last, key tiebreak; a group at the lowest sort_order beneath it); null or absent column = key order; server never names the column
+- [x] Both nav rows at weight 600 (Plex Mono 600 loaded), active still by colour + underline
+- [x] check.py guards for all of the above, driving the real input/save handlers; 23 mutations, all fail check.py
+- [x] Smoke: 23 steps pass, incl. two lines edited in one group → exactly those two keys change server-side, a mistyped label shows its error and holds the save

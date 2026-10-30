@@ -189,7 +189,7 @@ input[aria-invalid=true], textarea[aria-invalid=true] { border-color: var(--dang
 .tabs a {
   padding: 10px 10px 9px; white-space: nowrap; text-decoration: none;
   color: var(--text-muted); border-bottom: 2px solid transparent;
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
   transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
 }
 .tabs a:hover { color: var(--text); }
@@ -276,12 +276,12 @@ td.actions { white-space: nowrap; text-align: right; }
 .subtabs a {
   padding: 7px 8px 6px; white-space: nowrap; text-decoration: none;
   color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
   transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
 }
 .subtabs a:hover { color: var(--text); }
 .subtabs a[aria-current=page] { color: var(--accent-fg); border-bottom-color: var(--accent); }
-.subtabs .n { margin-left: 6px; letter-spacing: 0; opacity: .7; }
+.subtabs .n { margin-left: 6px; letter-spacing: 0; opacity: .7; font-weight: 400; }
 .subtabs .dirty { margin-left: 4px; letter-spacing: 0; color: var(--warn); }
 /* Each heading level steps in once more and draws its own rule, so depth reads at a glance. */
 .ctree, .cgroup { display: grid; gap: 12px; align-content: start; }
@@ -293,6 +293,17 @@ td.actions { white-space: nowrap; text-align: right; }
 .cgroup .cgroup > .cg-head { color: var(--text); font-size: 10px; }
 .cgroup .cgroup .cgroup > .cg-head { color: var(--text-muted); }
 .cg-head .crumb { color: var(--text-muted); opacity: .75; }
+/* A group: one "Label: value" line per field in one textarea, grown to fit (no scrollbar). */
+.cfields { display: grid; gap: 4px; }
+.cf-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
+.cf-errors ul { margin: 0; padding: 6px 10px 6px 24px; border: 1px solid var(--danger-border); border-radius: var(--r); color: var(--danger); font-size: 12px; }
+textarea.autosize { resize: none; overflow: hidden; field-sizing: content; }
+.cfields > textarea { font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+.cfields.changed > textarea { border-color: var(--accent); }
+.cfields > textarea[aria-invalid=true] { border-color: var(--danger); }
+.fkeys { font-family: var(--mono); font-size: 10px; color: var(--text-muted); overflow-wrap: anywhere; }
+.alone { display: grid; gap: 4px; padding-top: 6px; }
+.alone .note { font-size: 12px; }
 .hit { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
 .hit-path { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-fg); text-decoration: none; }
 .hit-path:hover { text-decoration: underline; }

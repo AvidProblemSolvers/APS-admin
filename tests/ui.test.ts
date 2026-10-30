@@ -9,7 +9,7 @@ import bookings from "../public/js/views/bookings.js";
 import audit, { diffWords } from "../public/js/views/audit.js";
 import team from "../public/js/views/team.js";
 import settings from "../public/js/views/settings.js";
-import content, { buildTree, headingPath, humanize, searchHits } from "../public/js/views/content.js";
+import content, { applyGroup, buildTree, groupText, headingPath, humanize, parseGroup, pendingChanges, searchHits, splitGroup } from "../public/js/views/content.js";
 import answers, { summaryNote } from "../public/js/views/answers.js";
 import signals from "../public/js/views/signals.js";
 import traffic from "../public/js/views/traffic.js";
@@ -190,6 +190,65 @@ describe("content pane", () => {
     assert.deepEqual(searchHits(state).map((r: { key: string }) => r.key), ["x.one", "y.needle_key", "z.no"]);
     assert.deepEqual(headingPath("answers_index.categories.buying.lead"), ["Answers Index", "Categories", "Buying"]);
     assert.deepEqual(headingPath("solo"), ["Solo"]);
+  });
+
+  it("orders by sort_order (nulls last, key breaks ties); null or missing is key order", () => {
+    const at = (key: string, sort_order?: number | null) => ({ ...row(key), ...(sort_order === undefined ? {} : { sort_order }) });
+    const tree = buildTree([at("b.z", 1), at("b.g.y", 2), at("b.g.a", 3), at("b.c"), at("a.q", 5), at("a.p", null)]);
+    assert.deepEqual(tree.map((t: { name: string }) => t.name), ["b", "a"]);
+    assert.deepEqual(tree[0].fields.map((r: { key: string }) => r.key), ["b.z", "b.c"]);
+    assert.deepEqual(tree[0].groups[0].fields.map((r: { key: string }) => r.key), ["b.g.y", "b.g.a"]);
+    assert.deepEqual(buildTree([at("b.z"), at("a.q")]).map((t: { name: string }) => t.name), ["a", "b"]);
+  });
+
+  describe("group textarea", () => {
+    const g = [row("p.g.button", "Read it"), row("p.g.label", "WHICH: KIND?"), row("p.g.link", " Bring it → "), row("p.g.min_chars", "10")];
+    const v = (r: { value: string }) => r.value;
+
+    it("renders one 'Label: value' line per field and parses back exactly", () => {
+      const text = groupText(g, v);
+      assert.equal(text, "Button: Read it\nLabel: WHICH: KIND?\nLink:  Bring it → \nMin Chars: 10");
+      assert.deepEqual(parseGroup(text, g), { values: Object.fromEntries(g.map((r) => [r.key, r.value])), errors: [] });
+    });
+
+    it("tolerates blank lines, reordered lines, CRLF and a missing space after the colon", () => {
+      const r = parseGroup("\r\nMin Chars:10\r\n\nLink:  Bring it → \nButton: Read it\nLabel: WHICH: KIND?\n", g);
+      assert.equal(r.values!["p.g.min_chars"], "10");
+      assert.equal(r.values!["p.g.link"], " Bring it → ");
+    });
+
+    for (const [name, text, needle] of [
+      ["a mistyped label", "Buton: Read it\nLabel: x\nLink: y\nMin Chars: 1", "“Buton” is not a field"],
+      ["a duplicated label", "Button: a\nButton: b\nLabel: x\nLink: y\nMin Chars: 1", "“Button” appears more than once"],
+      ["a missing label", "Button: a\nLabel: x\nMin Chars: 1", "“Link” is missing"],
+      ["a line with no label", "Button: a\nLabel: x\nLink: y\nMin Chars: 1\nstray words", "Line 5 has no"],
+      ["an emptied value", "Button: \nLabel: x\nLink: y\nMin Chars: 1", "“Button” is empty"],
+      ["an empty textarea", "", "“Button” is missing"],
+    ]) {
+      it(`refuses ${name} and returns no values at all`, () => {
+        const r = parseGroup(text, g);
+        assert.equal(r.values, null);
+        assert.ok(r.errors.some((e: string) => e.includes(needle)), r.errors.join(" | "));
+      });
+    }
+
+    it("keeps line breaks, colon labels and shared labels out of the textarea", () => {
+      const rows = [row("p.g.a", "one\ntwo"), row("p.g.b", "fine"), row("p.g.min_chars"), row("p.g.MIN_CHARS"), row("p.g.x:y")];
+      const { inline, alone } = splitGroup(rows, v);
+      assert.deepEqual(inline.map((r: { key: string }) => r.key), ["p.g.b"]);
+      assert.deepEqual(alone.map((x: { r: { key: string } }) => x.r.key), ["p.g.a", "p.g.min_chars", "p.g.MIN_CHARS", "p.g.x:y"]);
+    });
+
+    it("an error holds that group's save, drops its earlier valid edits, and leaves other groups' edits", () => {
+      const rows = [...g, row("p.other", "o")];
+      let state = { rows, edits: { "p.other": "o2" }, drafts: {} };
+      state = { ...state, ...applyGroup(state, "p.g", groupText(g, v).replace("Read it", "Read now")) };
+      assert.deepEqual(pendingChanges(state), { changes: { "p.other": "o2", "p.g.button": "Read now" }, held: 0 });
+      state = { ...state, ...applyGroup(state, "p.g", "Buton: Read now\nLabel: x\nLink: y\nMin Chars: 1") };
+      assert.deepEqual(pendingChanges(state), { changes: { "p.other": "o2" }, held: 1 });
+      state = { ...state, ...applyGroup(state, "p.g", groupText(g, v)) };
+      assert.deepEqual(pendingChanges(state), { changes: { "p.other": "o2" }, held: 0 });
+    });
   });
 
   it("renders the chosen tab from the hash and keeps the publish notice", () => {

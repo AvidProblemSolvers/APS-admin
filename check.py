@@ -339,12 +339,17 @@ def humanize(seg):
 
 
 class ContentDom(HTMLParser):
-    """Collects fields with their enclosing heading chain, tab links, headings and hits."""
+    """Collects fields with their enclosing heading chain, tab links, headings and hits.
+
+    A field is either one line of a group textarea (data-group, its keys in data-keys, in line
+    order) or a <label class="content-field"> of its own (a search hit, or a value that cannot
+    be one line)."""
 
     def __init__(self):
         super().__init__()
         self.stack, self.fields, self.tabs, self.heads, self.hits = [], [], [], [], []
         self.groups, self.capture, self.buf = [], None, ""
+        self.areas, self.errors, self.blocks = [], {}, []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -353,6 +358,18 @@ class ContentDom(HTMLParser):
             self.stack.append((tag, cls, a))
         if tag == "section" and "cgroup" in cls:
             self.groups.append({"path": a.get("data-path"), "depth": int(a.get("data-depth", 0)), "head": None})
+        if tag == "div" and "cfields" in cls:
+            self.blocks.append({"path": a.get("data-fields"), "chain": [g["path"] for g in self.groups], "areas": 0, "alone": []})
+        if tag == "div" and a.get("data-alone") and self.blocks:
+            self.blocks[-1]["alone"].append(a["data-alone"])
+        if tag == "div" and a.get("data-errors") is not None:
+            self.capture, self.buf = ("errors", a["data-errors"]), ""
+        if tag == "textarea" and a.get("data-group") is not None:
+            self.areas.append({"group": a["data-group"], "keys": _json.loads(a.get("data-keys") or "[]"), "text": "",
+                               "chain": [g["path"] for g in self.groups], "invalid": a.get("aria-invalid") == "true"})
+            if self.blocks:
+                self.blocks[-1]["areas"] += 1
+            self.capture, self.buf = "area", ""
         if tag == "label" and "content-field" in cls:
             self.fields.append({"key": a.get("data-key"), "chain": [g["path"] for g in self.groups], "fname": None,
                                 "hit": self.hits[-1] if self.hits and self.hits[-1]["open"] else None})
@@ -379,6 +396,18 @@ class ContentDom(HTMLParser):
         if self.capture == "crumb" and "crumb" in cls:
             self.capture = "head"
             return
+        if self.capture == "area" and t == "textarea":
+            area = self.areas[-1]
+            area["text"] = self.buf[1:] if self.buf.startswith("\n") else self.buf  # HTML drops one leading newline
+            for i, line in enumerate(area["text"].split("\n")):
+                key = area["keys"][i] if i < len(area["keys"]) else None
+                self.fields.append({"key": key, "chain": area["chain"], "fname": line.split(": ", 1)[0], "hit": None, "line": line})
+            self.capture = None
+            return
+        if isinstance(self.capture, tuple) and t == "div" and a.get("data-errors") == self.capture[1]:
+            self.errors[self.capture[1]] = self.buf.strip()
+            self.capture = None
+            return
         if self.capture == "tab" and t == "a":
             self.tabs[-1]["text"] = self.buf
             self.capture = None
@@ -399,7 +428,7 @@ class ContentDom(HTMLParser):
             self.hits[-1]["open"] = False
 
     def handle_data(self, d):
-        if self.capture in ("tab", "head", "fname", "hitpath"):
+        if self.capture in ("tab", "head", "fname", "hitpath", "area") or isinstance(self.capture, tuple):
             self.buf += d
 
 
@@ -501,6 +530,221 @@ if r.returncode:
 else:
     for msg in content_problems(_json.loads(r.stdout), _rows, _keys[3], "%s.%s" % (_B, _T)):
         fail(msg)
+# --- Content pane: one textarea per group, parsed back key by key ------------------------------
+# A group's single-line fields render as ONE textarea of "Label: value" lines in the group's
+# order; parsing it back must give exactly the same keys and values (colons, arrows, edge
+# spaces). A mistyped, repeated or missing label, or a line with no label, must hold that
+# group's save and name the problem, without dropping or inventing a key. A value with a line
+# break is its own field. The real handlers run (input:group, then click:save) on a fake pane.
+
+CONTENT_HARNESS = """
+import view, { parseGroup } from "./public/js/views/content.js";
+const { rows, tab, scenarios, preset } = JSON.parse(process.argv[1]);
+const ctx = { role: "owner", me: { role: "owner" }, confirm: () => true };
+const fresh = () => ({ ...view.initial({ ...ctx, sub: tab }), rows, edits: { ...preset } });
+const out = { render: String(view.render(fresh(), ctx)), runs: {} };
+for (const [name, s] of Object.entries(scenarios)) {
+  const pane = { state: fresh(), root: { querySelectorAll: () => [] } };
+  pane.patch = pane.set = (next) => void (pane.state = { ...pane.state, ...next });
+  const run = { sent: null, toasts: [] };
+  const c = { ...ctx, toast: (m, bad) => run.toasts.push([m, Boolean(bad)]),
+    api: async (_fn, body) => { run.sent = body.changes; const k = Object.keys(body.changes);
+      return { updated: k, rows: rows.map((r) => (k.includes(r.key) ? { ...r, value: body.changes[r.key] } : r)) }; } };
+  for (const [kind, a, b] of s.steps) {
+    if (kind === "edit") {  // a search hit's own field: key a, value b
+      const label = { querySelector: () => ({}), classList: { toggle() {} } };
+      view.on["input:edit"]({ dataset: { key: a }, value: b, classList: { contains: () => false }, closest: () => label }, pane, c);
+      continue;
+    }
+    const el = { dataset: { group: s.group, keys: JSON.stringify(s.keys) }, value: a, style: {}, scrollHeight: 0, offsetHeight: 0,
+      clientHeight: 0, setAttribute() {}, removeAttribute() {}, closest: () => null };
+    view.on["input:group"](el, pane, c);
+  }
+  await view.on["click:save"]({}, pane, c);
+  const last = s.steps.filter((x) => x[0] === "group").at(-1)[1];
+  run.parsed = parseGroup(last, rows.filter((r) => s.keys.includes(r.key))).values;
+  run.after = String(view.render(pane.state, c));
+  out.runs[name] = run;
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def content_run(rows, tab, scenarios=None, preset=None):
+    r = subprocess.run(["node", "--input-type=module", "-e", CONTENT_HARNESS,
+                        _json.dumps({"rows": rows, "tab": tab, "scenarios": scenarios or {}, "preset": preset or {}})],
+                       cwd=ROOT, capture_output=True, text=True)
+    if r.returncode:
+        return None, r.stderr.strip()[-400:]
+    return _json.loads(r.stdout), None
+
+
+def group_problems(rows, tab, group, multi, other):
+    """rows: one tab; `group` holds N single-line fields plus the `multi` key (a line break);
+    `other` is a key in another group with an unsaved edit that must still save."""
+    out = []
+    inline = sorted((r for r in rows if r["key"].rsplit(".", 1)[0] == group and r["key"] != multi), key=lambda r: r["key"])
+    want = ["%s: %s" % (humanize(r["key"].split(".")[-1]), r["value"]) for r in inline]
+    keys = [r["key"] for r in inline]
+    lines = list(want)
+    edited = {keys[0]: inline[0]["value"] + " (edited: yes)", keys[2]: " new → value: here "}
+    two = list(lines)
+    two[0], two[2] = "%s: %s" % (want[0].split(": ", 1)[0], edited[keys[0]]), "%s: %s" % (want[2].split(": ", 1)[0], edited[keys[2]])
+    first, second = want[0].split(": ", 1)[0], want[1].split(": ", 1)[0]
+    typo = "Xq" + first
+    bad = {
+        "mistyped": ([typo + ": " + inline[0]["value"]] + lines[1:], typo),
+        "duplicated": (lines + [lines[1]], second),
+        "missing": (lines[:1] + lines[2:], second),
+        "no label": (lines + ["just words here"], "just words here"),
+    }
+    g = lambda ls: ["group", "\n".join(ls)]
+    scen = {"roundtrip": {"steps": [g(lines)]}, "two edits": {"steps": [g(two)]},
+            "two edits then reverted": {"steps": [g(two), g(lines)]}}
+    for name, (ls, _) in bad.items():
+        scen[name] = {"steps": [g(ls)]}
+    # Each layer alone: a valid edit made invalid must not save; a search-hit edit to a key in
+    # an invalid group must not save either.
+    scen["valid then mistyped"] = {"steps": [g(two), g(bad["mistyped"][0])]}
+    scen["mistyped, then a hit edit"] = {"steps": [g(bad["mistyped"][0]), ["edit", keys[1], "edited from search"]]}
+    for v in scen.values():
+        v.update(group=group, keys=keys)
+    other_value = "other group's edit"
+    res, err = content_run(rows, tab, scen, {other: other_value})
+    if err:
+        return ["content: could not render/run the group textarea: %s" % err]
+    d = ContentDom()
+    d.feed(res["render"])
+    areas = [a for a in d.areas if a["group"] == group]
+    block = [b for b in d.blocks if b["path"] == group]
+    if len(areas) != 1 or (block and block[0]["areas"] != 1):
+        out.append("content: group %s must render ONE textarea for its %d single-line fields, found %d" % (group, len(inline), len(areas)))
+    elif areas[0]["text"].split("\n") != want or areas[0]["keys"] != keys:
+        out.append("content: group %s textarea must be %d lines 'Label: value' in the group's order:\n      want %r\n      got  %r"
+                   % (group, len(want), want, areas[0]["text"].split("\n")))
+    if any(multi in a["keys"] or multi.split(".")[-1] in a["text"] for a in d.areas) or not block or multi not in block[0]["alone"] \
+            or not any(f["key"] == multi and f["fname"] == humanize(multi.split(".")[-1]) for f in d.fields):
+        out.append("content: %s has a line break, so it must render as its own field below the group, not in the textarea" % multi)
+    runs = res["runs"]
+    orig = {r["key"]: r["value"] for r in inline}
+    rt = runs["roundtrip"]
+    if rt["parsed"] != orig:
+        out.append("content: parsing the rendered textarea must give back exactly the %d keys and values:\n      want %r\n      got  %r" % (len(orig), orig, rt["parsed"]))
+    if rt["sent"] not in (None, {other: other_value}):
+        out.append("content: an unchanged group must save nothing of its own, sent %r" % rt["sent"])
+    te = runs["two edits"]
+    if te["sent"] != dict(edited, **{other: other_value}):
+        out.append("content: editing two lines must save exactly those two keys (and the other group's edit), sent %r" % te["sent"])
+    if runs["two edits then reverted"]["sent"] != {other: other_value}:
+        out.append("content: lines edited then typed back to their saved values must save nothing, sent %r" % runs["two edits then reverted"]["sent"])
+    for name, (_, label) in list(bad.items()) + [("valid then mistyped", (None, typo)), ("mistyped, then a hit edit", (None, typo))]:
+        run = runs[name]
+        sent = run["sent"] or {}
+        if any(k in sent for k in keys) or set(sent) - set(r["key"] for r in rows):
+            out.append("content: a %s label must hold group %s's save (no key dropped or created), sent %r" % (name, group, sent))
+        if sent != {other: other_value}:
+            out.append("content: a %s label in one group must not hold other groups' saves, sent %r" % (name, sent))
+        a = ContentDom()
+        a.feed(run["after"])
+        msg = a.errors.get(group, "")
+        if label not in msg:
+            out.append("content: a %s label must show an error naming %r above group %s, got %r" % (name, label, group, msg))
+        kept = [x for x in a.areas if x["group"] == group]
+        if not kept or not kept[0]["invalid"]:
+            out.append("content: after a refused save, group %s must keep the typed text, marked invalid" % group)
+        if not any(bad for _, bad in run["toasts"]):
+            out.append("content: a save with a %s label must say a group was not saved" % name)
+    return out
+
+
+_rng2 = _random.Random()
+_G = "%s.%s" % (_seg(_rng2), _seg(_rng2))
+_tab = _G.split(".")[0]
+_vals = ["Read it", "WHICH KIND IS YOURS?: pick one", "Bring it to an hour →", "  padded both ends  ", "10", "a:b:c → d: "]
+_lead = [_seg(_rng2) for _ in _vals]
+_grows = [{"key": "%s.%s" % (_G, l), "value": v, "updated_at": "2026-01-0%dT00:00:00Z" % (i + 1)} for i, (l, v) in enumerate(zip(_lead, _vals))]
+_multi = "%s.%s" % (_G, _seg(_rng2))
+_other = "%s.%s" % (_tab, _seg(_rng2))
+_grows += [{"key": _multi, "value": "first line\n%s: looks like a label" % humanize(_lead[0]), "updated_at": "2026-01-01T00:00:00Z"},
+           {"key": _other, "value": "top level", "updated_at": "2026-01-01T00:00:00Z"}]
+for msg in group_problems(_grows, _tab, _G, _multi, _other):
+    fail(msg)
+
+
+# --- Content pane: website order (sort_order), key order without it --------------------------------
+
+
+def order_problems():
+    """Tabs, groups and fields follow sort_order (nulls last, key breaks ties); a group sits at
+    the lowest sort_order under it. null everywhere, or no column at all, is plain key order."""
+    out = []
+    # c has no fields of its own: its place comes only from c.h.k, two levels down.
+    base = [("b.z", 1), ("b.g2.y", 2), ("b.g2.a", 3), ("b.g1.x", 4), ("b.m", None), ("b.c", None), ("a.q", 5), ("a.p", None), ("c.h.k", 0)]
+    variants = {
+        "sort_order": ([dict(key=k, value="v", updated_at="2026-01-01T00:00:00Z", sort_order=o) for k, o in base],
+                       ["c", "b", "a"], ["b.z", "b.c", "b.m"], ["b.g2", "b.g1"], ["b.g2.y", "b.g2.a"]),
+        "null": ([dict(key=k, value="v", updated_at="2026-01-01T00:00:00Z", sort_order=None) for k, _ in base],
+                 ["a", "b", "c"], ["b.c", "b.m", "b.z"], ["b.g1", "b.g2"], ["b.g2.a", "b.g2.y"]),
+        "absent": ([dict(key=k, value="v", updated_at="2026-01-01T00:00:00Z") for k, _ in base],
+                   ["a", "b", "c"], ["b.c", "b.m", "b.z"], ["b.g1", "b.g2"], ["b.g2.a", "b.g2.y"]),
+    }
+    for name, (rows, tabs, own, groups, g2) in variants.items():
+        res, err = content_run(rows, "b")
+        if err:
+            out.append("content: with sort_order %s the pane must still render: %s" % (name, err))
+            continue
+        d = ContentDom()
+        d.feed(res["render"])
+        got = {
+            "tabs": [t["name"] for t in d.tabs],
+            "own fields": next((a["keys"] for a in d.areas if a["group"] == "b"), []),
+            "groups": [g["path"] for g in d.blocks if g["path"].count(".") == 1],
+            "fields in b.g2": next((a["keys"] for a in d.areas if a["group"] == "b.g2"), []),
+        }
+        for what, want in zip(got, (tabs, own, groups, g2)):
+            if got[what] != want:
+                out.append("content: with sort_order %s, %s must be ordered %s, got %s" % (name, what, want, got[what]))
+    fn = (ROOT / "supabase/functions/admin-content/handler.ts").read_text()
+    if "sort_order" in re.sub(r"//.*", "", fn):
+        out.append("admin-content: must not name sort_order in a query — an unmigrated database has no such column")
+    return out
+
+
+for msg in order_problems():
+    fail(msg)
+
+
+# --- Navigation weight -----------------------------------------------------------------------------
+
+
+def nav_problems(css_src, page_html):
+    """Both tab rows (.tabs, .subtabs) are set at 600 or heavier, Plex Mono 600 is loaded, and the
+    active tab differs from the rest by colour and an underline, not by weight alone."""
+    out = []
+    src = re.sub(r"/\*.*?\*/", "", css_src, flags=re.S)
+    rule = lambda sel: " ".join(re.findall(r"(?:^|\})\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", src))
+    prop = lambda body, name: (re.findall(r"(?:^|;|\s)" + name + r"\s*:\s*([^;]+)", body) or [None])[-1]
+    for row in (".tabs a", ".subtabs a"):
+        w = prop(rule(row), "font-weight")
+        if not w or not w.strip().isdigit() or int(w) < 600:
+            out.append("admin.css: %s must be font-weight 600 or heavier, got %s" % (row, w))
+        if prop(rule(row), "letter-spacing") != ".18em" or prop(rule(row), "text-transform") != "uppercase":
+            out.append("admin.css: %s must keep .18em tracking and uppercase" % row)
+        act = rule(row + "[aria-current=page]")
+        if not prop(act, "color") or prop(act, "color") == prop(rule(row), "color") or not prop(act, "border-bottom-color"):
+            out.append("admin.css: the active %s must differ by colour and underline, not weight alone" % row)
+        aw = prop(act, "font-weight")
+        if aw and int(aw) < 600:
+            out.append("admin.css: the active %s must not be lighter than the rest" % row)
+    fonts = re.search(r"IBM\+Plex\+Mono:wght@([\d;]+)", page_html)
+    if not fonts or "600" not in fonts.group(1).split(";"):
+        out.append("index.html: IBM Plex Mono 600 must be loaded for the tab rows (else the browser fakes bold)")
+    return out
+
+
+for msg in nav_problems((ROOT / "public/css/admin.css").read_text(), (ROOT / "public/index.html").read_text()):
+    fail(msg)
+
 app_js = (ROOT / "public/js/app.js").read_text()
 if "mounted.pane.route(sub)" not in app_js or "decodeURIComponent(rest" not in app_js or "sub: id === wanted ? sub" not in app_js:
     fail("app.js: #/<pane>/<sub> must reach the pane (initial ctx.sub, and pane.route on a hash change without remounting)")
