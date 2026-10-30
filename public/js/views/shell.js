@@ -4,12 +4,23 @@ import { ALLOWED_EMAIL_DOMAIN } from "../config.js";
 import { html } from "../lib/html.js";
 import { panesFor } from "../lib/panes.js";
 import { allowedDomain } from "../shared/email_domain.js";
+import { currentTheme } from "../lib/theme.js";
+
+/** Two text-labelled buttons; aria-pressed marks the theme in use. app.js handles the click. */
+export function themeToggle() {
+  const t = currentTheme();
+  return html`<div class="seg theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-set="dark" aria-pressed="${String(t === "dark")}">Dark</button>
+    <button type="button" data-theme-set="light" aria-pressed="${String(t === "light")}">Light</button>
+  </div>`;
+}
 
 const logo = html`<img class="gate-logo" src="/APS_LOGO.png" alt="Avid Problem Solvers" width="160" height="100">`;
 
 /** `codeFor` is the address a code was just requested for; it adds the code field. */
 export function signIn({ message = "", error = "", codeFor = "" } = {}) {
   return html`<main class="gate">
+    ${themeToggle()}
     ${logo}
     <p class="eyebrow">APS Admin</p>
     <form data-form="send-link" novalidate>
@@ -30,6 +41,7 @@ export function signIn({ message = "", error = "", codeFor = "" } = {}) {
 /** One screen for every refusal. It never says whether the address exists. */
 export function notAuthorised() {
   return html`<main class="gate">
+    ${themeToggle()}
     ${logo}
     <h1>Not authorised</h1>
     <p class="message">This account does not have access to APS Admin.</p>
@@ -46,6 +58,7 @@ export function frame(me, active) {
       <div class="who">
         <span class="email">${me.email}</span>
         <span class="pill ${me.role === "owner" ? "ok" : ""}">${me.role}</span>
+        ${themeToggle()}
         <button class="btn small" type="button" data-signout>Sign out</button>
       </div>
     </header>

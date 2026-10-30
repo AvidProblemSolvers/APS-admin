@@ -44,3 +44,9 @@
 - After a send, the email form stays above the code field (address prefilled) so the user can correct it or request another code; its button is disabled for 30 s as before. The code form carries the address in a hidden field so verification uses exactly the address the code was sent to.
 - The verify button is the primary control once a code is requested; "Email me a sign-in code" drops to outlined.
 - `create_user: false` is kept on `/otp`; `/verify` cannot create accounts. The emailed template change (code instead of link) is a dashboard step for the user — DEPLOY.md §1.
+- Light theme pre-paint script is an external classic script (`/js/theme-init.js`) in `<head>`, not inline: the CSP has no `unsafe-inline` and build config was out of scope. Being parser-blocking it still runs before `<body>` is created, so there is no flash (smoke test asserts this).
+- Colour tokens are named by role; `#7FE9E1` splits into `--accent-fg` (text), `--accent-hi` (gradient end, hover fill), `--focus` and `--ok`, and `#07211F` into `--bg` and `--on-accent`, because those roles need different light values. Non-colour constants (`--ease`, `--t`, fonts, `--r`) moved to an `html {}` block so `:root` holds only themed colours.
+- `transparent` and `currentColor` are keywords, not palette colours, and are allowed in rules.
+- The light theme adds colours beyond the CLAUDE.md palette (darkened teal, amber and coral for contrast on near-white); check.py still pins the dark `:root` block to the CLAUDE.md palette.
+- The "Admin" eyebrow in the header is hidden below 400px so the theme toggle fits on the narrowest phones.
+- The logo PNG is unchanged in light mode (rule 1); it keeps its own dark-teal background.

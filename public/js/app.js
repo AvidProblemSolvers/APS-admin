@@ -4,6 +4,7 @@ import { api, download, onAuthLost } from "./lib/api.js";
 import { consumeRedirect, hasSession, NEUTRAL_SENT, sendLink, signOut, verifyCode } from "./lib/auth.js";
 import { canSee, PANES } from "./lib/panes.js";
 import { mountPane } from "./lib/pane.js";
+import { setTheme } from "./lib/theme.js";
 import { frame, notAuthorised, signIn } from "./views/shell.js";
 import answers from "./views/answers.js";
 import audit from "./views/audit.js";
@@ -106,6 +107,8 @@ app.addEventListener("submit", async (e) => {
 });
 
 app.addEventListener("click", async (e) => {
+  const themeBtn = e.target.closest("[data-theme-set]");
+  if (themeBtn) return setTheme(themeBtn.dataset.themeSet);
   if (!e.target.closest("[data-signout]")) return;
   await signOut();
   showSignIn({ message: "Signed out." });

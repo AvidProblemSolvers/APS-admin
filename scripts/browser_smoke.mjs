@@ -229,6 +229,49 @@ try {
     await until("document.querySelectorAll('.bars rect').length === 7", "7 bars");
   });
 
+  await step("theme: toggle on sign-in, stored, applied before <body> on reload, toggled back from the header", async () => {
+    const bg = () => js("return getComputedStyle(document.body).backgroundColor");
+    const pressed = () => js("return [...document.querySelectorAll('[data-theme-set]')].map((b) => b.dataset.themeSet + '=' + b.getAttribute('aria-pressed')).join(' ')");
+    await js("localStorage.clear(); return 1");
+    await go(`${ORIGIN}/`);
+    await until("document.querySelector('[data-form=send-link]')", "sign-in form");
+    if ((await bg()) !== "rgb(7, 33, 31)") throw new Error(`default is not dark: ${await bg()}`);
+    await click("[data-theme-set=light]");
+    if ((await pressed()) !== "dark=false light=true") throw new Error(`aria-pressed: ${await pressed()}`);
+    if ((await js("return localStorage.getItem('aps-admin-theme')")) !== "light") throw new Error("choice not stored");
+    if ((await bg()) !== "rgb(246, 248, 247)") throw new Error(`light not applied: ${await bg()}`);
+    // Record the theme at the moment <body> is created: set by then means no flash.
+    const { identifier } = (await send("Page.addScriptToEvaluateOnNewDocument", { source:
+      "new MutationObserver((_, o) => { if (document.body) { window.__themeAtBody = document.documentElement.dataset.theme; o.disconnect(); } }).observe(document, { childList: true, subtree: true });" })).result;
+    await go(`${ORIGIN}/`);
+    await until("document.querySelector('[data-form=send-link]')", "sign-in form");
+    await send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+    if ((await js("return window.__themeAtBody")) !== "light") throw new Error(`theme at <body>: ${await js("return window.__themeAtBody")}`);
+    if ((await pressed()) !== "dark=false light=true") throw new Error(`after reload: ${await pressed()}`);
+    await go(`${ORIGIN}/#access_token=token-${ID.owner}&refresh_token=r-${ID.owner}&expires_in=3600`);
+    await until("document.querySelector('.top .who [data-theme-set=dark]')", "header toggle");
+    if ((await pressed()) !== "dark=false light=true") throw new Error(`header: ${await pressed()}`);
+    await click(".top [data-theme-set=dark]");
+    if ((await bg()) !== "rgb(7, 33, 31)" || (await js("return localStorage.getItem('aps-admin-theme')")) !== "dark") throw new Error("header toggle did not switch to dark");
+    await click("[data-signout]");
+    await until("document.querySelector('[data-form=send-link]')", "signed out");
+    await js("localStorage.clear(); return 1");
+  });
+
+  await step("theme: storage that throws still renders dark, and the toggle still works", async () => {
+    const { identifier } = (await send("Page.addScriptToEvaluateOnNewDocument", { source:
+      "for (const m of ['getItem', 'setItem', 'removeItem']) Storage.prototype[m] = () => { throw new DOMException('blocked', 'SecurityError'); };" })).result;
+    try {
+      await go(`${ORIGIN}/`);
+      await until("document.querySelector('[data-form=send-link]')", "sign-in form");
+      if ((await js("return document.documentElement.dataset.theme")) !== "dark") throw new Error("not dark");
+      await click("[data-theme-set=light]");
+      if ((await js("return document.documentElement.dataset.theme")) !== "light") throw new Error("toggle failed with storage blocked");
+    } finally {
+      await send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+    }
+  });
+
   await step("team member: three tabs, no revenue, no write controls, no way into audit", async () => {
     await js("localStorage.clear(); return 1");
     await go(`${ORIGIN}/#access_token=token-${ID.team}&refresh_token=r-${ID.team}&expires_in=3600`);

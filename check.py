@@ -47,7 +47,7 @@ class Checker(HTMLParser):
         if tag == "meta" and "name" in a:
             self.meta[a["name"]] = a.get("content", "")
         if tag == "script":
-            self.scripts.append(a)
+            self.scripts.append(dict(a, in_head="head" in self.stack))
         if "style" in a or any(k.startswith("on") for k in a):
             self.inline.append(tag)
         if tag == "style":
@@ -79,8 +79,8 @@ if "noindex" not in c.meta.get("robots", ""):
     fail("index.html: robots noindex meta missing")
 if "viewport" not in c.meta:
     fail("index.html: viewport meta missing")
-if [s.get("type") for s in c.scripts] != ["module"] or c.scripts[0].get("src") != "/js/app.js":
-    fail("index.html: expected exactly one module script, /js/app.js")
+if [(s.get("src"), s.get("type")) for s in c.scripts] != [("/js/theme-init.js", None), ("/js/app.js", "module")]:
+    fail("index.html: expected exactly two scripts: classic /js/theme-init.js, then module /js/app.js")
 if c.inline:
     fail("index.html: inline style/handler on %s" % c.inline)
 if "<title>" not in html:
@@ -101,9 +101,14 @@ if robots != ["User-agent:", "*", "Disallow:", "/"]:
 # --- colours: tokens only --------------------------------------------------------------------
 ALLOWED_HEX = {"#07211f", "#0e3330", "#f2efe7", "#ffffff", "#4fc1bc", "#7fe9e1", "#8fa9a6", "#f0c27b", "#e8977a"}
 ALLOWED_RGB = {"242,239,231", "79,193,188", "127,233,225", "240,194,123", "232,151,122"}
+HEX_RE = r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b(?![0-9a-fA-F])"
 for p in files("public", {".css", ".js", ".html"}):
     src = p.read_text()
-    for h in re.findall(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b(?![0-9a-fA-F])", src):
+    if p.suffix == ".css":
+        if "Fraunces" in src:
+            fail("%s: Fraunces is not used in the admin" % p.relative_to(ROOT))
+        continue  # CSS colours: see the theme guards below
+    for h in re.findall(HEX_RE, src):
         if h.lower() not in ALLOWED_HEX and not re.search(r"&#\d|#/|#[0-9a-f]{3}\b", h.lower()) :
             fail("%s: colour %s is not a design token" % (p.relative_to(ROOT), h))
     for m in re.findall(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", src):
@@ -113,6 +118,159 @@ for p in files("public", {".css", ".js", ".html"}):
         fail("%s: non-token colour function" % p.relative_to(ROOT))
     if "Fraunces" in src:
         fail("%s: Fraunces is not used in the admin" % p.relative_to(ROOT))
+
+# --- themes: colours only in the two token blocks ----------------------------------------------
+# :root holds the dark default (the CLAUDE.md palette, nothing else); :root[data-theme="light"]
+# redefines every token. A raw colour anywhere else in the CSS fails, and so does a token that
+# exists in one block but not the other.
+NAMED = set("""aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet
+brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan
+darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred
+darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue
+dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray
+green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen
+lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink
+lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen
+linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue
+mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy
+oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip
+peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown
+seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal
+thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen canvas canvastext linktext
+visitedtext activetext buttonface buttontext buttonborder field fieldtext highlight highlighttext mark marktext
+graytext accentcolor accentcolortext selecteditem selecteditemtext""".split())
+COLOUR_FN = r"\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\("
+DARK_BLOCK = r'^:root\s*\{([^}]*)\}'
+LIGHT_BLOCK = r'^:root\[data-theme="light"\]\s*\{([^}]*)\}'
+
+
+def theme_problems(css_src, name="admin.css"):
+    """Every theme-guard failure for one stylesheet's source (a function so it can be mutation-tested)."""
+    out = []
+    src = re.sub(r"/\*.*?\*/", "", css_src, flags=re.S)
+    dark, light = re.findall(DARK_BLOCK, src, re.M), re.findall(LIGHT_BLOCK, src, re.M)
+    if len(dark) != 1 or len(light) != 1:
+        return ["%s: needs exactly one :root block and one :root[data-theme=\"light\"] block" % name]
+    toks = lambda block: dict((k, v.strip()) for k, v in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", block))
+    d, l = toks(dark[0]), toks(light[0])
+    for t in sorted(set(d) - set(l)):
+        out.append("%s: token %s has no light value under :root[data-theme=\"light\"]" % (name, t))
+    for t in sorted(set(l) - set(d)):
+        out.append("%s: light token %s has no dark value on :root" % (name, t))
+    for t, v in d.items():
+        for h in re.findall(HEX_RE, v):
+            if h.lower() not in ALLOWED_HEX:
+                out.append("%s: dark token %s = %s is not a CLAUDE.md colour" % (name, t, h))
+        for m in re.findall(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", v):
+            if ",".join(m) not in ALLOWED_RGB:
+                out.append("%s: dark token %s = rgb(%s) is not a CLAUDE.md colour" % (name, t, ",".join(m)))
+    rest = re.sub(DARK_BLOCK, "", src, flags=re.M)
+    rest = re.sub(LIGHT_BLOCK, "", rest, flags=re.M)
+    rest = re.sub(r"\"[^\"]*\"|'[^']*'", "", rest)
+    rest = re.sub(r"var\(\s*--[\w-]+\s*\)", "", rest)
+    for h in re.findall(HEX_RE, rest):
+        out.append("%s: raw colour %s outside the token blocks" % (name, h))
+    for f in re.findall(COLOUR_FN, rest):
+        out.append("%s: raw colour %s() outside the token blocks" % (name, f))
+    for prop, value in re.findall(r"([\w-]+)\s*:\s*([^;{}]+)(?=[;}])", rest):
+        for word in re.findall(r"[a-zA-Z][\w-]*", value):
+            if word.lower() in NAMED:
+                out.append("%s: named colour '%s' in %s outside the token blocks" % (name, word, prop))
+    return out
+
+
+for p in files("public", {".css"}):
+    for msg in theme_problems(p.read_text(), str(p.relative_to(ROOT))):
+        fail(msg)
+
+# --- themes: pre-paint script and the toggle ---------------------------------------------------
+# The sign-in page is not a separate document: signIn() renders into index.html's #app, so the
+# app shell and the sign-in page share one <head>. Every HTML document in public/ is checked.
+
+
+def prepaint_problems(page_html, init_js, name="index.html"):
+    out = []
+    pc = Checker()
+    pc.feed(page_html)
+    first = pc.scripts[0] if pc.scripts else {}
+    if first.get("src") != "/js/theme-init.js" or not first.get("in_head"):
+        out.append("%s: the first script must be /js/theme-init.js, in <head>" % name)
+    elif any(k in first for k in ("defer", "async", "type")):
+        out.append("%s: /js/theme-init.js must be a plain blocking script (no defer/async/module)" % name)
+    if not re.search(r"try\s*\{[^}]*localStorage\.getItem\(\"aps-admin-theme\"\)", init_js):
+        out.append("theme-init.js: must read localStorage \"aps-admin-theme\" inside try")
+    if 'setAttribute("data-theme"' not in init_js:
+        out.append("theme-init.js: must set data-theme on <html>")
+    return out
+
+
+init_js = (ROOT / "public/js/theme-init.js").read_text() if (ROOT / "public/js/theme-init.js").exists() else ""
+for p in files("public", {".html"}):
+    for msg in prepaint_problems(p.read_text(), init_js, str(p.relative_to(ROOT))):
+        fail(msg)
+theme_js = (ROOT / "public/js/lib/theme.js").read_text()
+if not re.search(r"try\s*\{\s*localStorage\.setItem\(THEME_KEY", theme_js):
+    fail("lib/theme.js: the localStorage write must be inside try")
+
+
+class Toggle(HTMLParser):
+    """Collects the theme buttons in a render: their attributes, text, and enclosing classes."""
+
+    def __init__(self):
+        super().__init__()
+        self.buttons, self.stack, self.cur = [], [], None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "button" and "data-theme-set" in a:
+            self.cur = dict(a, text="", parents=[x.get("class", "") for x in self.stack])
+            self.buttons.append(self.cur)
+        if tag not in VOID:
+            self.stack.append(a)
+
+    def handle_endtag(self, tag):
+        if tag == "button":
+            self.cur = None
+        if tag not in VOID and self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data):
+        if self.cur is not None:
+            self.cur["text"] += data.strip()
+
+
+def toggle_problems(renders):
+    """renders: {name: html}. Each must hold a two-button toggle with aria-pressed and text labels."""
+    out = []
+    for name, out_html in renders.items():
+        t = Toggle()
+        t.feed(out_html)
+        if len(t.buttons) != 2:
+            out.append("%s: needs the two-state theme toggle (found %d buttons)" % (name, len(t.buttons)))
+            continue
+        for b in t.buttons:
+            if b.get("aria-pressed") not in ("true", "false"):
+                out.append("%s: theme button %s has no aria-pressed" % (name, b.get("data-theme-set")))
+            if not b["text"]:
+                out.append("%s: theme button %s has no text label" % (name, b.get("data-theme-set")))
+        if [b.get("aria-pressed") for b in t.buttons].count("true") != 1:
+            out.append("%s: exactly one theme button must be pressed" % name)
+        if name == "frame" and not any("who" in c.split() for c in t.buttons[0]["parents"]):
+            out.append("frame: the theme toggle must sit in the header next to sign-out")
+    return out
+
+
+r = subprocess.run(["node", "--input-type=module", "-e", """
+import { frame, notAuthorised, signIn } from "./public/js/views/shell.js";
+console.log(JSON.stringify({ frame: String(frame({ role: "owner", email: "o@x" }, "bookings")),
+  signIn: String(signIn({})), notAuthorised: String(notAuthorised()) }));
+"""], cwd=ROOT, capture_output=True, text=True)
+if r.returncode:
+    fail("shell.js: could not render for the toggle check: %s" % r.stderr.strip()[-300:])
+else:
+    import json
+    for msg in toggle_problems(json.loads(r.stdout)):
+        fail(msg)
 
 css = (ROOT / "public/css/admin.css").read_text()
 if re.search(r"@keyframes|animation\s*:(?!\s*none)", css):

@@ -59,6 +59,14 @@
 - [x] check.py: `/verify` with `type "email"`; code field attributes. Tests: 408 pass. Smoke: 17 steps pass (code sign-in incl. a wrong code first; unknown address gets the field and the same bad-code message)
 - [x] DEPLOY.md: Magic Link template must show `{{ .Token }}` and contain no link; OTP length 6
 
+## Light theme (presentation only)
+- [x] Every CSS colour is a role-named token (`--bg`, `--surface`, `--text`, `--text-muted`, `--accent`, `--accent-fg`, `--on-accent`, `--danger`, `--ok`, …) on `:root`; dark values are the shipped colours, and the var-resolved rules diff identical to the previous admin.css
+- [x] `:root[data-theme="light"]` redefines every token; text, muted, accent text, warn/danger and text-on-accent all ≥ 4.5:1 in both themes
+- [x] Header toggle (Dark / Light, `aria-pressed`) next to Sign out; also on the sign-in and Not authorised screens; choice in localStorage `aps-admin-theme`, every access in try/catch
+- [x] `/js/theme-init.js`: classic blocking script in `<head>` applies the stored theme before `<body>` exists (external, not inline — the CSP forbids inline scripts)
+- [x] check.py guards: no raw colour outside the token blocks (hex, colour functions, named colours); token parity both ways; dark tokens stay on the CLAUDE.md palette; pre-paint script in `<head>`; toggle rendered with aria-pressed and text labels. Each mutation-tested (17 mutations, all fail check.py)
+- [x] Smoke: 19 steps pass (theme stored, applied before `<body>` on reload, toggled from the header; storage that throws still renders dark and toggles)
+
 ## Deploy
 - [x] _headers, robots.txt, CSP (no _redirects needed: hash routing)
 - [x] GitHub Actions workflow (deno check → npm test → check.py → build → wrangler pages deploy)
