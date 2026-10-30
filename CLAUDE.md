@@ -114,4 +114,5 @@ python3 check.py              validate HTML, tokens, noindex, CSP, role and audi
 npm test                      offline tests: real Edge Function handlers on an in-memory DB
 node scripts/mock_functions.mjs   local preview on :8001 against the mock backend
 npm run smoke                 real-browser click-through of every pane (local Chrome, offline)
+node scripts/measure_panes.mjs  per-tab timing, first visit and revisit (--latency-ms/--cold-ms model the server)
 ```

@@ -142,12 +142,31 @@ try {
     await until("location.hash === '' || location.hash === '#/bookings'", "tokens stripped from URL");
   });
 
+  await step("a revisited tab paints from memory with no request", async () => {
+    await js("window.__fn = []; const f0 = window.fetch; window.fetch = (u, i) => (String(u).includes('/functions/v1/') && window.__fn.push(String(u).split('/').pop() + ' ' + JSON.parse(i?.body || '{}').action), f0(u, i)); return 1");
+    const ready = "document.getElementById('pane')?.children.length && !document.querySelector('#pane .loading')";
+    await tab("audit", `${ready} && document.querySelector('#pane table')`);
+    await tab("bookings", "document.querySelector('[data-click=expand]')");
+    await tab("audit", `${ready} && document.querySelector('#pane table')`);
+    await tab("bookings", "document.querySelector('[data-click=expand]')");
+    const calls = await js("return window.__fn.join(', ')");
+    if (calls !== "admin-audit list") throw new Error(`requests: ${calls}`);
+  });
+
   await step("bookings: expand shows the brief; email booking link sends", async () => {
     await until("document.querySelector('[data-click=expand]')", "rows");
     await js("[...document.querySelectorAll('[data-click=expand]')].find(b => b.closest('tr').innerText.includes('Daniel')).click(); return 1");
     await until("document.body.innerText.includes('Five days, predictably.')", "brief text");
     await click("[data-click=email-link]");
     await until("document.getElementById('toast').textContent.includes('Booking link sent')", "toast");
+  });
+
+  await step("a write clears cached tabs: Audit fetches again and shows the email-link row", async () => {
+    await js("window.__fn.length = 0; return 1");
+    await tab("audit", "document.querySelector('#pane table') && document.getElementById('pane').innerText.toUpperCase().includes('BOOKING.EMAIL_LINK')");
+    const calls = await js("return window.__fn.join(', ')");
+    if (calls !== "admin-audit list") throw new Error(`requests: ${calls}`);
+    await tab("bookings", "document.querySelector('[data-click=expand]')");
   });
 
   await step("bookings: search filter narrows the table without losing focus", async () => {

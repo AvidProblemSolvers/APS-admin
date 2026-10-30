@@ -59,3 +59,8 @@
 - Headings use role="heading" with aria-level = depth + 2 (unbounded) rather than h3–h6, so depth beyond four still has a correct level.
 - Measuring used Chrome over the DevTools protocol (as browser_smoke.mjs does), not Playwright: Playwright is not a project dependency and the only installs on this machine are outside this folder.
 - Mock seed gained answers_index.* keys up to six segments deep, so the nesting is visible locally.
+- Pane cache: in memory only (never localStorage — it holds booking and team data), keyed by pane id, holding the load made with the pane's default filters. Filtered reloads are not cached.
+- Pane cache freshness is 30 s: a revisit inside that makes no request; after it the cached data paints at once and one background request refreshes it. The refresh repaints only if the data changed and the user has not interacted with or focused anything in the pane, so it never clobbers typing.
+- Any non-read action (anything outside list/get/summary/detail/status/export_csv) clears every pane's cache, not just its own: writes have cross-pane effects (approval → booking + audit row; any write → audit).
+- No skeleton screen and no fetch parallelisation: measured first paint is already ~10 ms and every pane makes exactly one call, so neither moves a number.
+- First-visit time is the Edge Function round trip plus cold start and cannot be fixed in the browser. Options (keep-warm pings, or consolidating the ten admin functions so one cold start serves all tabs) are server changes left to the owner.

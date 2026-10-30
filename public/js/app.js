@@ -1,6 +1,7 @@
 // Controller: auth state → screen. Routing is by hash (#/bookings).
 
 import { api, download, onAuthLost } from "./lib/api.js";
+import { forget, READS } from "./lib/cache.js";
 import { consumeRedirect, hasSession, NEUTRAL_SENT, sendLink, signOut, verifyCode } from "./lib/auth.js";
 import { canSee, PANES } from "./lib/panes.js";
 import { mountPane } from "./lib/pane.js";
@@ -33,12 +34,14 @@ function toast(msg, bad = false) {
 
 function showSignIn(state) {
   me = null;
+  forget();
   app.innerHTML = String(signIn(state));
   app.querySelector(state?.codeFor ? "input[name=code]" : "input[type=email]")?.focus();
 }
 
 function showNotAuthorised() {
   me = null;
+  forget();
   app.innerHTML = String(notAuthorised());
 }
 
@@ -62,7 +65,8 @@ function route() {
     me,
     role: me.role,
     sub: id === wanted ? sub : "",
-    api,
+    // A write anywhere can change any pane, so it clears every pane's cached data.
+    api: (fn, body) => (READS.has(body.action) ? api(fn, body) : api(fn, body).finally(forget)),
     download: (fn, body) => download(fn, body).catch((e) => toast(e.message, true)),
     toast,
     confirm: (m) => window.confirm(m),
@@ -70,6 +74,7 @@ function route() {
 }
 
 async function start() {
+  forget(); // a new sign-in may be a different person
   const linkError = consumeRedirect();
   if (!hasSession()) return showSignIn({ error: linkError });
   try {

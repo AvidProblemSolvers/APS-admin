@@ -87,3 +87,7 @@
 - [x] Section in the hash (`#/content/<section>`); router hands the sub-path to the open pane instead of remounting it, so unsaved edits survive a tab switch
 - [x] check.py guards (random segment names each run): one tab per first segment; every key in exactly one tab at its dot depth; labels derived; own fields first; search across sections with heading path; search box above tabs; hash round-trip; publish notice. 18 mutations, all fail check.py
 - [x] Smoke: 20 steps pass (nesting depth and indentation, search keeps focus, edit survives tab switch, tab survives reload)
+- [x] Measured before fixing: one Edge Function call per tab, nothing serial; client cost 20–70 ms; the wait is the server round trip and cold start (DECISIONS.md)
+- [x] Pane data cached in memory for the session (`lib/cache.js`): revisit within 30 s → no request; older → paints from memory, refreshes in the background (repaints only if changed and untouched); any write, sign-in and sign-out clear it; loads that began before a write are discarded. Revisit data paint 265 ms → 10–40 ms (modelled), 0 calls
+- [x] Rejected by the numbers: skeleton (first paint already ~10 ms), parallel fetches (one call per tab)
+- [x] Smoke: 22 steps pass (revisit makes no request; a write makes Audit fetch again — fails if invalidation is removed)

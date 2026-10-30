@@ -15,6 +15,7 @@ import signals from "../public/js/views/signals.js";
 import traffic from "../public/js/views/traffic.js";
 import availability from "../public/js/views/availability.js";
 import slotRequests from "../public/js/views/slot-requests.js";
+import { cached, forget, generation, READS, remember } from "../public/js/lib/cache.js";
 import { EXPECTED } from "./matrix.ts";
 import { call, fresh } from "./helpers.ts";
 
@@ -136,6 +137,25 @@ describe("settings pane", () => {
     assert.ok(out.includes('name="scheduler_buffer_minutes"'));
     const bad = String(settings.render({ ...s, errors: { razorpay_payment_url_live: "Must be a Razorpay payment page URL" } }, ctxFor("admin")));
     assert.ok(bad.includes("Must be a Razorpay payment page URL"));
+  });
+});
+
+describe("pane cache", () => {
+  it("returns copies, and a load that started before a write is discarded", () => {
+    forget();
+    remember("x", { rows: [1] }, generation());
+    const a = cached("x");
+    a.data.rows.push(2);
+    assert.deepEqual(cached("x").data.rows, [1]);
+    const since = generation();
+    forget();
+    remember("x", { rows: ["stale"] }, since);
+    assert.equal(cached("x"), undefined);
+  });
+
+  it("treats every write action as a write", () => {
+    const writes = Object.keys(CONTROLS).map((c) => c.split(".")[1]).filter((a) => a !== "revenue" && a !== "export_csv");
+    for (const a of writes) assert.ok(!READS.has(a), `${a} must clear the cache`);
   });
 });
 
