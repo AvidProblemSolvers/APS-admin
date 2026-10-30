@@ -175,7 +175,7 @@ describe("content pane", () => {
   it("renders the chosen tab from the hash and keeps the publish notice", () => {
     const ctx = { ...ctxFor("admin"), sub: "solo" };
     const out = String(content.render({ ...content.initial(ctx), rows }, ctx));
-    assert.match(out, /href="#\/content\/solo" data-tab="solo" aria-current="page"/);
+    assert.match(out, /href="#\/content\/solo" data-tab="solo" data-click="section" aria-current="page"/);
     assert.ok(out.includes("Saved edits are not live until you publish."));
   });
 });

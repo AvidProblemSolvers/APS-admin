@@ -182,6 +182,8 @@ try {
     if (path !== "Answers Index › Categories › Buying › Lead") throw new Error(`hit path: ${path}`);
     await js("const i=document.querySelector('[data-input=search]'); i.value='Methodology'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
     await until("document.querySelector('.hit .hit-path')?.textContent === 'How'", "value hit in How");
+    await click(".subtabs a[data-tab=hero]");
+    await until("!document.querySelector('.hit') && document.querySelector('[data-input=search]').value === '' && document.querySelector('[data-key=\"hero.h1\"]')", "current tab clears the search");
     await send("Page.reload");
     await sleep(300);
     await until("document.querySelector('.subtabs a[aria-current=page]')?.dataset.tab === 'hero'", "hero tab after reload");

@@ -83,7 +83,7 @@ function tabs(state) {
     ${tree.map((t) => {
       const total = state.rows.filter((r) => inTab(r.key, t.name)).length;
       const dirty = keys.filter((k) => inTab(k, t.name)).length;
-      return html`<a href="${tabHref(t.name)}" data-tab="${t.name}"${t === active && !state.q ? raw(' aria-current="page"') : ""}>${t.label}<span class="n num">${total}</span>${dirty ? html`<span class="dirty num" title="${dirty} unsaved">•${dirty}</span>` : ""}</a>`;
+      return html`<a href="${tabHref(t.name)}" data-tab="${t.name}" data-click="section"${t === active && !state.q ? raw(' aria-current="page"') : ""}>${t.label}<span class="n num">${total}</span>${dirty ? html`<span class="dirty num" title="${dirty} unsaved">•${dirty}</span>` : ""}</a>`;
     })}
   </nav>`;
 }
@@ -99,7 +99,7 @@ function body(state) {
     const hits = searchHits(state);
     const sections = new Set(hits.map((r) => r.key.split(".")[0])).size;
     return html`<p class="muted num" data-hits="${hits.length}">${hits.length} match${hits.length === 1 ? "" : "es"}${hits.length ? ` in ${sections} section${sections === 1 ? "" : "s"}` : ""}</p>
-      ${hits.map((r) => html`<div class="hit"><a class="hit-path" href="${tabHref(r.key.split(".")[0])}" data-hit-path="${headingPath(r.key).join(" › ")}">${headingPath(r.key).join(" › ")}</a>${field(state, r)}</div>`)}`;
+      ${hits.map((r) => html`<div class="hit"><a class="hit-path" href="${tabHref(r.key.split(".")[0])}" data-click="section" data-hit-path="${headingPath(r.key).join(" › ")}">${headingPath(r.key).join(" › ")}</a>${field(state, r)}</div>`)}`;
   }
   const t = currentTab(buildTree(state.rows), state);
   return html`<div class="ctree" data-tab-body="${t.name}">${branch(state, t, 0)}</div>`;
@@ -137,6 +137,12 @@ export default {
     pane.patch({ tab: sub, q: "" }, "tabs", "body");
   },
   on: {
+    /** A tab or a hit's path: the hash change switches section; the same hash still clears a search. */
+    "click:section"(a, pane) {
+      const href = a.getAttribute("href");
+      if (location.hash !== href) location.hash = href;
+      else pane.route(decodeURIComponent(href.slice("#/content/".length)));
+    },
     "input:search"(el, pane) {
       pane.patch({ q: el.value }, "tabs", "body");
     },
