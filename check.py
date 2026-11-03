@@ -745,6 +745,208 @@ def nav_problems(css_src, page_html):
 for msg in nav_problems((ROOT / "public/css/admin.css").read_text(), (ROOT / "public/index.html").read_text()):
     fail(msg)
 
+# --- Traffic pane: CUSTOM range ----------------------------------------------------------------
+# Drives the real view's handlers on a fake pane with a counting api: CUSTOM reveals exactly the
+# FROM/TO fields Audit and Signals render (the presets reveal none); an inverted or future range
+# is refused inline with no fetch; the range round-trips through the hash the way app.js reads it;
+# FROM/TO are sent as IST midnights. Then the real admin-traffic handler, on the mock DB, must
+# refuse UTC midnights and an inverted range and give one IST day per bar.
+
+TRAFFIC_HARNESS = """
+import view from "./public/js/views/traffic.js";
+import audit from "./public/js/views/audit.js";
+import signals from "./public/js/views/signals.js";
+import { call, fresh } from "./tests/helpers.ts";
+const { scenarios, server } = JSON.parse(process.argv[1]);
+const summary = (body) => ({ days: body.days ?? 3, since: "x", until: null, views: 7, previous_views: 5, sessions: 3, ai: [],
+  daily: [{ date: "2026-01-01", count: 1 }], referrers: [], countries: [], campaigns: [], paths: [] });
+const run = async (s) => {
+  const out = { calls: [], hashes: [], initialCalls: 0 };
+  const ctx = { role: "team", me: { role: "team" }, sub: s.sub, toast() {}, navigate: (h) => out.hashes.push(h),
+    api: async (_fn, body) => (out.calls.push(body), summary(body)) };
+  const pane = { state: view.initial(ctx) };
+  pane.set = (next) => void (pane.state = { ...pane.state, ...next });
+  pane.reload = async () => void (pane.state = { ...pane.state, ...(await view.load(ctx, pane.state)) });
+  await pane.reload();  // the mount
+  out.initialCalls = out.calls.length;
+  for (const [kind, a, b] of s.steps) {
+    if (kind === "days") await view.on["click:days"]({ dataset: { days: String(a) } }, pane, ctx);
+    if (kind === "custom") await view.on["click:custom"]({}, pane, ctx);
+    if (kind === "route") await view.route(a, pane, ctx);
+    if (kind === "submit") await view.on["submit:range"]({ elements: { from: { value: a }, to: { value: b } } }, pane, ctx);
+  }
+  out.state = { mode: pane.state.mode, from: pane.state.from, to: pane.state.to, error: pane.state.error };
+  try {
+    out.html = String(view.render(pane.state, ctx));
+  } catch (e) {
+    out.html = `render failed: ${e.message}`;
+  }
+  return out;
+};
+const out = { runs: {}, others: {}, server: {} };
+for (const [name, s] of Object.entries(scenarios)) out.runs[name] = await run(s);
+const f = { from: "2026-01-01", to: "2026-01-02" };
+out.others.audit = String(audit.render({ filters: f, families: [], rows: [], total: 0 }, { role: "owner" }));
+out.others.signals = String(signals.render({ filters: f, rows: [], total: 0, facets: { all: 0, converted: 0, verdicts: [], countries: [] } }, {}));
+for (const [name, body] of Object.entries(server)) {
+  const r = await call(fresh(), "admin-traffic", "team", { action: "summary", ...body });
+  out.server[name] = { status: r.status, daily: (r.json.daily ?? []).map((d) => d.date) };
+}
+console.log(JSON.stringify(out));
+"""
+
+DATE_INPUT_RE = r'<input type="date"[^>]*>'
+FROMTO_RE = r'<label class="field"><span class="label">From</span><input type="date" name="from"[^>]*></label>\s*<label class="field"><span class="label">To</span><input type="date" name="to"[^>]*></label>'
+
+
+def traffic_hash_sub(h):
+    """What app.js hands the pane for a hash: the part after #/traffic/, URI-decoded."""
+    from urllib.parse import unquote
+    parts = re.sub(r"^#/?", "", h).split("/")
+    return parts[0], unquote("/".join(parts[1:]))
+
+
+def traffic_problems(res):
+    out = []
+    runs = res["runs"]
+    blank = lambda s: re.sub(r'value="[^"]*"', 'value=""', s)
+    # 1. CUSTOM reveals the two date inputs; the presets do not.
+    for name in ("default", "preset 7", "preset 30", "preset 90", "custom then 7"):
+        n = len(re.findall(DATE_INPUT_RE, runs[name]["html"]))
+        if n:
+            out.append("traffic: %s must show no date inputs, found %d" % (name, n))
+    for name in ("custom", "custom from hash"):
+        h = runs[name]["html"]
+        inputs = re.findall(DATE_INPUT_RE, h)
+        if len(inputs) != 2 or not re.search(FROMTO_RE, h):
+            out.append("traffic: %s must reveal exactly the FROM and TO date inputs, found %d" % (name, len(inputs)))
+            continue
+        mine = blank(re.search(FROMTO_RE, h).group(0))
+        for other in ("audit", "signals"):
+            theirs = re.search(FROMTO_RE, res["others"][other])
+            if not theirs or blank(theirs.group(0)) != mine:
+                out.append("traffic: the FROM/TO markup must be the one %s uses" % other)
+    if 'data-click="custom" aria-pressed="true"' not in runs["custom"]["html"]:
+        out.append("traffic: the CUSTOM button must show as pressed when chosen")
+    # 2. An inverted or future range is refused inline and triggers no fetch.
+    for name in ("inverted", "future", "starts in the future", "inverted from hash", "future from hash"):
+        r = runs[name]
+        before = r["initialCalls"] if "hash" not in name else 0
+        if len(r["calls"]) != before:
+            out.append("traffic: %s range must not fetch (made %d call(s))" % (name, len(r["calls"]) - before))
+        alert = re.search(r'role="alert"[^>]*>([^<]+)<', r["html"])
+        if not r["state"]["error"] or not alert or not alert.group(1).strip():
+            out.append("traffic: %s range must be refused inline with a plain message" % name)
+        if 'class="stats"' in r["html"]:
+            out.append("traffic: %s range must not show numbers" % name)
+        if "hash" not in name and any("custom/" in h for h in r["hashes"]):
+            out.append("traffic: a refused range must not be written to the hash")
+    ok = runs["valid"]
+    if len(ok["calls"]) != ok["initialCalls"] + 1 or ok["state"]["error"] or 'class="stats"' not in ok["html"]:
+        out.append("traffic: a valid custom range must load exactly once and show its numbers")
+    # 3. The range round-trips through the URL hash (and the presets keep theirs).
+    for name, want in (("valid", ("custom", "2026-03-10", "2026-03-12")), ("preset 7", (7, "", "")), ("preset 90", (90, "", ""))):
+        r = runs[name]
+        if not r["hashes"]:
+            out.append("traffic: %s must be written to the hash" % name)
+            continue
+        pane, sub = traffic_hash_sub(r["hashes"][-1])
+        back = runs.get("reopen " + name)
+        if pane != "traffic" or not back or back["sub"] != sub:
+            out.append("traffic: %s hash %s does not reopen the Traffic pane (sub %r)" % (name, r["hashes"][-1], sub))
+            continue
+        got = (back["state"]["mode"], back["state"]["from"], back["state"]["to"])
+        if got != want or back["calls"][:1] != r["calls"][-1:]:
+            out.append("traffic: reopening %s from its hash gives %s / %s, not %s / %s" % (name, got, back["calls"][:1], want, r["calls"][-1:]))
+    d = runs["default"]
+    if d["state"]["mode"] != 30 or d["calls"] != [{"action": "summary", "days": 30}]:
+        out.append("traffic: the default on first load must stay 30 days, got %s %s" % (d["state"]["mode"], d["calls"]))
+    r = runs["route back"]
+    if r["state"]["mode"] != "custom" or r["calls"][-1:] != ok["calls"][-1:]:
+        out.append("traffic: a hash change to a custom range must load that range")
+    # 4. IST day boundaries, not UTC.
+    want = {"action": "summary", "from": "2026-03-09T18:30:00.000Z", "to": "2026-03-12T18:30:00.000Z"}
+    if ok["calls"][-1:] != [want]:
+        out.append("traffic: FROM 2026-03-10 TO 2026-03-12 must be sent as IST midnights %s, got %s" % (want, ok["calls"][-1:]))
+    s = res["server"]
+    if s["ist"]["status"] != 200 or s["ist"]["daily"] != ["2026-10-10", "2026-10-11", "2026-10-12"]:
+        out.append("admin-traffic: an IST range must give one bar per IST day, got %s" % s["ist"])
+    for name in ("utc", "inverted", "future"):
+        if s[name]["status"] != 400:
+            out.append("admin-traffic: a %s range must be refused (400), got %d" % (name, s[name]["status"]))
+    for name in ("days 7", "days 30", "days 90"):
+        if s[name]["status"] != 200 or len(s[name]["daily"]) != int(name.split()[1]):
+            out.append("admin-traffic: the %s preset must still work" % name)
+    if any("Days are IST calendar days." not in r["html"] for r in runs.values()):
+        out.append('traffic: "Days are IST calendar days." must stay visible for every option')
+    return out
+
+
+def traffic_run(today):
+    from datetime import date, timedelta
+    t = date.fromisoformat(today)
+    iso = lambda d: (t + timedelta(days=d)).isoformat()
+    ist = lambda d: "%sT00:00:00+05:30" % d
+    scenarios = {
+        "default": {"sub": "", "steps": []},
+        "preset 7": {"sub": "", "steps": [["days", 7]]},
+        "preset 30": {"sub": "7", "steps": [["days", 30]]},
+        "preset 90": {"sub": "", "steps": [["days", 90]]},
+        "custom": {"sub": "", "steps": [["custom"]]},
+        "custom then 7": {"sub": "", "steps": [["custom"], ["submit", "2026-03-10", "2026-03-12"], ["days", 7]]},
+        "custom from hash": {"sub": "custom", "steps": []},
+        "valid": {"sub": "", "steps": [["custom"], ["submit", "2026-03-10", "2026-03-12"]]},
+        "inverted": {"sub": "", "steps": [["custom"], ["submit", "2026-03-12", "2026-03-10"]]},
+        "future": {"sub": "", "steps": [["custom"], ["submit", iso(-3), iso(2)]]},
+        "starts in the future": {"sub": "", "steps": [["custom"], ["submit", iso(1), iso(4)]]},
+        "inverted from hash": {"sub": "custom/2026-03-12/2026-03-10", "steps": []},
+        "future from hash": {"sub": "custom/%s/%s" % (iso(-1), iso(3)), "steps": []},
+        "route back": {"sub": "", "steps": [["route", "custom/2026-03-10/2026-03-12"]]},
+    }
+    server = {
+        "ist": {"from": ist("2026-10-10"), "to": ist("2026-10-13")},
+        "utc": {"from": "2026-10-10T00:00:00Z", "to": "2026-10-13T00:00:00Z"},
+        "inverted": {"from": ist("2026-10-13"), "to": ist("2026-10-10")},
+        "future": {"from": ist("2026-10-18"), "to": ist("2026-10-25")},  # the mock's today is 2026-10-20
+        "days 7": {"days": 7}, "days 30": {"days": 30}, "days 90": {"days": 90},
+    }
+
+    def node(sc):
+        r = subprocess.run(["node", "--input-type=module", "-e", TRAFFIC_HARNESS, _json.dumps({"scenarios": sc, "server": server})],
+                           cwd=ROOT, capture_output=True, text=True)
+        if r.returncode:
+            return None, r.stderr.strip()[-400:]
+        return _json.loads(r.stdout), None
+
+    res, err = node(scenarios)
+    if err:
+        return None, err
+    # Reopen each written hash as a fresh page load would: the sub-path becomes ctx.sub.
+    reopen = {}
+    for name in ("valid", "preset 7", "preset 90"):
+        if res["runs"][name]["hashes"]:
+            reopen["reopen " + name] = {"sub": traffic_hash_sub(res["runs"][name]["hashes"][-1])[1], "steps": []}
+    if reopen:
+        more, err = node(reopen)
+        if err:
+            return None, err
+        for k, v in more["runs"].items():
+            res["runs"][k] = dict(v, sub=reopen[k]["sub"])
+    return res, None
+
+
+def _ist_today():
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+
+
+_res, _err = traffic_run(_ist_today())
+if _err:
+    fail("traffic.js: could not run the custom range check: %s" % _err)
+else:
+    for msg in traffic_problems(_res):
+        fail(msg)
+
 app_js = (ROOT / "public/js/app.js").read_text()
 if "mounted.pane.route(sub)" not in app_js or "decodeURIComponent(rest" not in app_js or "sub: id === wanted ? sub" not in app_js:
     fail("app.js: #/<pane>/<sub> must reach the pane (initial ctx.sub, and pane.route on a hash change without remounting)")

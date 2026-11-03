@@ -69,6 +69,8 @@ function route() {
     api: (fn, body) => (READS.has(body.action) ? api(fn, body) : api(fn, body).finally(forget)),
     download: (fn, body) => download(fn, body).catch((e) => toast(e.message, true)),
     toast,
+    // Records a pane's state in the hash without a hashchange (the pane already shows it).
+    navigate: (hash) => history.pushState(null, "", hash),
     confirm: (m) => window.confirm(m),
   }, VIEWS[id]) };
 }

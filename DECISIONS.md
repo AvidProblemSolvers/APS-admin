@@ -72,3 +72,8 @@
 - Auto-height: CSS `field-sizing: content` plus a JS fit (`view.after` hook in pane.js, called after every paint) for browsers without it. Setting `.style.height` is CSSOM, which the CSP allows.
 - sort_order is read via the existing `select *` and ordered in the browser; the query never names it, so an unmigrated database keeps working. A group or section takes the lowest sort_order of any field beneath it, at any depth.
 - Nav weight: both tab rows at 600 (Plex Mono 600 added to the font request); active tab keeps its accent colour and underline. Counts in section tabs stay at 400 so the label carries the weight.
+- Traffic CUSTOM: clicking it with no remembered range shows the FROM/TO fields and a prompt, not numbers — the previous preset's figures under a pressed CUSTOM would mislabel them. A range already applied this session is reused.
+- Traffic CUSTOM "in the future" means TO later than today in IST (TO = today is allowed: up to now). Ranges are capped at 366 days, checked in the browser and the Edge Function.
+- Traffic hash: presets also write the hash (`#/traffic/7`), so every period survives a reload; 30 days is plain `#/traffic` so the default URL is unchanged. Written with `history.pushState` (via `ctx.navigate`), so Back steps through periods; a refused range is never written.
+- Traffic custom comparison ("vs prior") is the same number of IST days immediately before FROM. Presets keep their rolling now − N days window exactly as before.
+- Pane cache gained `view.cacheKey(state)`: Traffic opened on anything but the default 30 days is not cached, so a bookmarked range never paints the 30-day figures first.

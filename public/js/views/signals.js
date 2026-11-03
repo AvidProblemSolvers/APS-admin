@@ -1,5 +1,6 @@
 // 6. Signals — all roles. probe_queries as a readable list, not a table. No personal data.
 
+import { dateFields, istDayRange } from "../lib/range.js";
 import { html, raw } from "../lib/html.js";
 import { dateTime } from "../lib/time.js";
 
@@ -26,8 +27,7 @@ function query(f, offset = 0) {
   if (f.converted === "yes") q.converted = true;
   if (f.converted === "no") q.converted = false;
   if (f.country) q.country = f.country;
-  if (f.from) q.from = new Date(`${f.from}T00:00:00+05:30`).toISOString();
-  if (f.to) q.to = new Date(Date.parse(`${f.to}T00:00:00+05:30`) + 86_400_000).toISOString();
+  Object.assign(q, istDayRange(f.from, f.to));
   if (f.q) q.q = f.q;
   return q;
 }
@@ -54,8 +54,7 @@ export default {
         <label class="field"><span class="label">Verdict</span><select name="verdict"><option value="">All</option>${facets.verdicts.map((v) => html`<option value="${v}"${sel(f.verdict, v)}>${v.replace(/_/g, " ")}</option>`)}</select></label>
         <label class="field"><span class="label">Converted</span><select name="converted"><option value="">All</option><option value="yes"${sel(f.converted, "yes")}>Yes</option><option value="no"${sel(f.converted, "no")}>No</option></select></label>
         <label class="field"><span class="label">Country</span><select name="country"><option value="">All</option>${facets.countries.map((c) => html`<option${sel(f.country, c)}>${c}</option>`)}</select></label>
-        <label class="field"><span class="label">From</span><input type="date" name="from" value="${f.from ?? ""}"></label>
-        <label class="field"><span class="label">To</span><input type="date" name="to" value="${f.to ?? ""}"></label>
+        ${dateFields(f)}
         <button class="btn primary" type="submit">Apply</button>
         <button class="btn" type="button" data-click="clear">Clear</button>
       </form>

@@ -100,3 +100,12 @@
 - [x] Both nav rows at weight 600 (Plex Mono 600 loaded), active still by colour + underline
 - [x] check.py guards for all of the above, driving the real input/save handlers; 23 mutations, all fail check.py
 - [x] Smoke: 23 steps pass, incl. two lines edited in one group → exactly those two keys change server-side, a mistyped label shows its error and holds the save
+
+## Traffic: CUSTOM range (2026-11-03)
+- [x] Fourth period button CUSTOM reveals FROM/TO + Apply; presets reveal nothing and behave as before; default stays 30 days
+- [x] FROM/TO markup and IST-day conversion moved to `lib/range.js` and used by Audit, Signals and Traffic alike (one pattern, not two)
+- [x] Inverted, future, half-filled or >366-day range refused inline (`role=alert`), no fetch, not written to the hash
+- [x] Period in the hash: `#/traffic` (30), `#/traffic/7`, `#/traffic/90`, `#/traffic/custom/FROM/TO`; reload, bookmark and back/forward keep it
+- [x] admin-traffic accepts `from`/`to` and checks them itself: IST midnights only, from < to, ends no later than tonight (IST), ≤ 366 days; bars are IST days; prior period = same length immediately before
+- [x] check.py guards (real handlers on a fake pane + the real Edge Function on the mock DB); 13 mutations, all fail check.py
+- [x] Smoke: 24 steps pass, incl. a custom range changing the numbers, surviving a reload, and an inverted range making no request

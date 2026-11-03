@@ -2,6 +2,7 @@
 // READ-ONLY: this view renders no edit control, no delete control, no input bound to a
 // row. The server has no such action either (admin-audit: list, export_csv).
 
+import { dateFields, istDayRange } from "../lib/range.js";
 import { html } from "../lib/html.js";
 import { dateTime } from "../lib/time.js";
 import { can } from "../lib/panes.js";
@@ -49,9 +50,7 @@ function filters(f) {
   if (f.action_prefix) out.action_prefix = f.action_prefix;
   if (f.actor) out.actor = f.actor;
   if (f.q) out.q = f.q;
-  if (f.from) out.from = new Date(`${f.from}T00:00:00+05:30`).toISOString();
-  if (f.to) out.to = new Date(Date.parse(`${f.to}T00:00:00+05:30`) + 86_400_000).toISOString();
-  return out;
+  return { ...out, ...istDayRange(f.from, f.to) };
 }
 
 export default {
@@ -65,8 +64,7 @@ export default {
         <label class="field"><span class="label">Action</span><select name="action_prefix"><option value="">All</option>${state.families.map((x) => html`<option${f.action_prefix === x ? html` selected` : ""}>${x}</option>`)}</select></label>
         <label class="field"><span class="label">Actor</span><input type="search" name="actor" value="${f.actor ?? ""}" placeholder="email contains"></label>
         <label class="field"><span class="label">Target</span><input type="search" name="q" value="${f.q ?? ""}" placeholder="key, slug, id"></label>
-        <label class="field"><span class="label">From</span><input type="date" name="from" value="${f.from ?? ""}"></label>
-        <label class="field"><span class="label">To</span><input type="date" name="to" value="${f.to ?? ""}"></label>
+        ${dateFields(f)}
         <button class="btn primary" type="submit">Apply</button>
         <span class="spacer"></span>
         ${can(ctx.role, "admin-audit.export_csv") ? html`<button class="btn" type="button" data-click="csv">Export CSV</button>` : ""}

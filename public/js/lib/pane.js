@@ -77,7 +77,7 @@ export function mountPane(root, ctx, view) {
     const since = generation();
     try {
       const loaded = await view.load(ctx, defaults);
-      remember(view.id, loaded, since);
+      if (key) remember(key, loaded, since);
       if (shown && (touched || !root.isConnected || root.contains(document.activeElement) || JSON.stringify(loaded) === JSON.stringify(shown))) return;
       state = { ...state, ...loaded };
       draw();
@@ -88,7 +88,9 @@ export function mountPane(root, ctx, view) {
 
   state = view.initial?.(ctx) ?? {};
   const defaults = state;
-  const hit = cached(view.id);
+  // A pane opened on non-default filters (e.g. a Traffic range from the hash) is not cached.
+  const key = view.cacheKey ? view.cacheKey(state) : view.id;
+  const hit = key && cached(key);
   if (hit) {
     state = { ...state, ...hit.data };
     draw();

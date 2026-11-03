@@ -316,6 +316,35 @@ try {
     await until("document.querySelectorAll('.bars rect').length === 7", "7 bars");
   });
 
+  await step("traffic: custom range changes the numbers, survives a reload, refuses an inverted range", async () => {
+    const views = () => js("return document.querySelector('.stat .value')?.textContent");
+    const seven = await views();
+    if (await js("return document.querySelectorAll('input[type=date]').length")) throw new Error("a preset shows date inputs");
+    await click("[data-click=custom]");
+    await until("document.querySelectorAll('form[data-submit=range] input[type=date]').length === 2", "FROM/TO revealed");
+    // Twelve to nine days ago (IST): four bars, outside the 7-day window, so the count differs.
+    const ist = (back) => new Date(Date.now() + 5.5 * 3_600_000 - back * 86_400_000).toISOString().slice(0, 10);
+    const [from, to] = [ist(12), ist(9)];
+    await js(`const f = document.querySelector('form[data-submit=range]'); f.elements.from.value = '${from}'; f.elements.to.value = '${to}'; f.requestSubmit(); return 1`);
+    await until("document.querySelectorAll('.bars rect').length === 4", "4 bars");
+    const custom = await views();
+    if (!custom || custom === seven) throw new Error(`views did not change: 7 days ${seven}, custom ${custom}`);
+    if ((await js("return location.hash")) !== `#/traffic/custom/${from}/${to}`) throw new Error(`hash: ${await js("return location.hash")}`);
+    await send("Page.reload");
+    await until("document.querySelectorAll('.bars rect').length === 4", "4 bars after reload");
+    if ((await js("return [document.querySelector('[name=from]').value, document.querySelector('[name=to]').value].join(' ')")) !== `${from} ${to}`) throw new Error("range not restored from the hash");
+    if ((await views()) !== custom) throw new Error("numbers differ after reload");
+    if (!(await text()).includes("Days are IST calendar days.")) throw new Error("IST note missing");
+    // Inverted: refused inline, and no request leaves the page.
+    await js("window.__calls = 0; const f0 = window.fetch; window.fetch = (...a) => (window.__calls++, f0(...a)); return 1");
+    await js(`const f = document.querySelector('form[data-submit=range]'); f.elements.from.value = '${to}'; f.elements.to.value = '${from}'; f.requestSubmit(); return 1`);
+    await until("document.querySelector('[role=alert]')?.textContent.includes('before FROM')", "inverted refused");
+    if (await js("return window.__calls")) throw new Error("an inverted range was fetched");
+    await click("[data-click=days][data-days='30']");
+    await until("document.querySelectorAll('.bars rect').length === 30 && !document.querySelector('input[type=date]')", "back to 30 days");
+    if ((await js("return location.hash")) !== "#/traffic") throw new Error(`30-day hash: ${await js("return location.hash")}`);
+  });
+
   await step("theme: toggle on sign-in, stored, applied before <body> on reload, toggled back from the header", async () => {
     const bg = () => js("return getComputedStyle(document.body).backgroundColor");
     const pressed = () => js("return [...document.querySelectorAll('[data-theme-set]')].map((b) => b.dataset.themeSet + '=' + b.getAttribute('aria-pressed')).join(' ')");

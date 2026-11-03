@@ -1,8 +1,45 @@
 // 7. Traffic — all roles. Aggregates only. Single-series daily bar chart (one accent hue,
 // no legend needed), per-bar hover titles, and the same numbers as a table.
+// Period: 7 / 30 / 90 days, or CUSTOM with the FROM/TO fields Audit and Signals use. The
+// period lives in the hash: #/traffic (30), #/traffic/7, #/traffic/custom/FROM/TO.
 
 import { html } from "../lib/html.js";
+import { dateFields, DATE_RE, istDayRange, rangeProblem } from "../lib/range.js";
 import { day } from "../lib/time.js";
+
+const PRESETS = [7, 30, 90];
+const DEFAULT_DAYS = 30;
+
+/** The part of the hash after #/traffic/ → { mode: 7 | 30 | 90 | "custom", from, to }. */
+export function parsePeriod(sub) {
+  const [kind, from = "", to = ""] = String(sub ?? "").split("/");
+  if (kind === "custom") return { mode: "custom", from: DATE_RE.test(from) ? from : "", to: DATE_RE.test(to) ? to : "" };
+  const days = Number(kind);
+  return { mode: PRESETS.includes(days) ? days : DEFAULT_DAYS, from: "", to: "" };
+}
+
+/** The hash that reopens a period. */
+export function periodHash(p) {
+  if (p.mode !== "custom") return p.mode === DEFAULT_DAYS ? "#/traffic" : `#/traffic/${p.mode}`;
+  return p.from && p.to ? `#/traffic/custom/${p.from}/${p.to}` : "#/traffic/custom";
+}
+
+/** Why this period cannot load ("" when it can). CUSTOM with no dates yet is not an error. */
+const problem = (p) => (p.mode === "custom" && (p.from || p.to) ? rangeProblem(p.from, p.to) : "");
+/** Whether this period is ready to fetch. */
+const ready = (p) => p.mode !== "custom" || (p.from && p.to && !rangeProblem(p.from, p.to));
+const same = (a, b) => a.mode === b.mode && (a.mode !== "custom" || (a.from === b.from && a.to === b.to));
+
+/** Shows a period at once; fetches only if it is valid. `navigate` also records it in the hash. */
+async function apply(pane, ctx, p, navigate) {
+  const error = problem(p);
+  const ok = ready(p);
+  // A valid period keeps the old numbers on screen until the new ones land, as before.
+  pane.set({ ...p, error, summary: ok ? pane.state.summary : null });
+  if (!ok) return;
+  if (navigate) ctx.navigate?.(periodHash(p));
+  await pane.reload();
+}
 
 function change(cur, prev) {
   if (!prev) return cur ? html`<span class="muted">new</span>` : "";
@@ -40,16 +77,41 @@ function ranked(title, rows, highlight = []) {
   </section>`;
 }
 
-export default {
-  id: "traffic",
-  initial: () => ({ days: 30 }),
-  load: (ctx, state) => ctx.api("admin-traffic", { action: "summary", days: state?.days ?? 30 }),
-  render(s) {
-    return html`
+function head(s) {
+  return html`
       <div class="pane-head">
-        <div class="seg" role="group" aria-label="Period">${[7, 30, 90].map((d) => html`<button type="button" data-click="days" data-days="${d}" aria-pressed="${s.days === d}">${d} DAYS</button>`)}</div>
+        <div class="seg" role="group" aria-label="Period">${PRESETS.map((d) => html`<button type="button" data-click="days" data-days="${d}" aria-pressed="${s.mode === d}">${d} DAYS</button>`)}<button type="button" data-click="custom" aria-pressed="${s.mode === "custom"}">CUSTOM</button></div>
         <span class="muted">Days are IST calendar days.</span>
       </div>
+      ${s.mode === "custom" ? html`<form class="filters" data-submit="range" aria-label="Custom range">
+        ${dateFields(s)}
+        <button class="btn primary" type="submit">Apply</button>
+      </form>
+      ${s.error ? html`<p class="bad-text" role="alert" data-range-error>${s.error}</p>` : ""}` : ""}`;
+}
+
+export default {
+  id: "traffic",
+  initial: (ctx) => {
+    const p = parsePeriod(ctx?.sub);
+    return { ...p, error: problem(p), summary: null };
+  },
+  /** Only the default period is cached; a range opened from the hash always loads fresh. */
+  cacheKey: (s) => (s.mode === DEFAULT_DAYS ? "traffic" : null),
+  /** Nothing is fetched for an incomplete or refused range. */
+  async load(ctx, state) {
+    const p = state ?? parsePeriod("");
+    if (!ready(p)) return { summary: null };
+    const body = p.mode === "custom" ? { action: "summary", ...istDayRange(p.from, p.to) } : { action: "summary", days: p.mode };
+    return { summary: await ctx.api("admin-traffic", body) };
+  },
+  render(state) {
+    const s = state.summary;
+    if (!s) {
+      return html`${head(state)}${state.mode === "custom" && !state.error ? html`<p class="empty">Pick a FROM and a TO date, then Apply.</p>` : ""}`;
+    }
+    return html`${head(state)}
+      ${state.mode === "custom" ? html`<p class="muted num">${day(`${state.from}T06:30:00Z`)} – ${day(`${state.to}T06:30:00Z`)} · ${s.days} day${s.days === 1 ? "" : "s"}, compared with the ${s.days} before</p>` : ""}
       <div class="stats">
         <div class="stat"><span class="label">Page views</span><span class="value num">${s.views}</span><span>${change(s.views, s.previous_views)}</span></div>
         <div class="stat"><span class="label">Sessions</span><span class="value num">${s.sessions}</span></div>
@@ -71,10 +133,28 @@ export default {
         ${ranked("Top pages", s.paths)}
       </div>`;
   },
+  /** Back/forward or an edited address: show the period the hash names. */
+  async route(sub, pane, ctx) {
+    const p = parsePeriod(sub);
+    if (same(p, pane.state) && pane.state.summary) return;
+    await apply(pane, ctx, p, false);
+  },
   on: {
-    async "click:days"(btn, pane) {
-      pane.set({ days: Number(btn.dataset.days) });
-      await pane.reload();
+    async "click:days"(btn, pane, ctx) {
+      await apply(pane, ctx, { ...pane.state, mode: Number(btn.dataset.days) }, true);
+    },
+    /** Reveals FROM/TO; reuses the last custom range if there was one. */
+    async "click:custom"(_b, pane, ctx) {
+      const p = { ...pane.state, mode: "custom" };
+      if (!p.from || !p.to) {
+        pane.set({ ...p, error: "", summary: null });
+        return void ctx.navigate?.(periodHash(p));
+      }
+      await apply(pane, ctx, p, true);
+    },
+    async "submit:range"(form, pane, ctx) {
+      const v = (name) => String(form.elements[name]?.value ?? "");
+      await apply(pane, ctx, { mode: "custom", from: v("from"), to: v("to") }, true);
     },
   },
 };

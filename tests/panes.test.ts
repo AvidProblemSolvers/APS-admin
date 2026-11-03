@@ -300,4 +300,34 @@ describe("signals and traffic", () => {
     assert.ok(!r.text.includes("pv-"), "no session ids");
     assert.equal((await call(fresh(), "admin-traffic", "team", { action: "summary", days: 365 })).status, 400);
   });
+
+  // NOW is 2026-10-20 12:00 IST. FROM 2026-10-10, TO 2026-10-14 as the browser sends them.
+  const ist = (d: string) => new Date(`${d}T00:00:00+05:30`).toISOString();
+  it("traffic takes a custom range on IST calendar days, compared with the same length before", async () => {
+    const r = await call(fresh(), "admin-traffic", "team", { action: "summary", from: ist("2026-10-10"), to: ist("2026-10-15") });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.days, 5);
+    assert.deepEqual((r.json.daily as R[]).map((d) => d.date), ["2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14"]);
+    const seeded = fresh().mem.tables.page_views;
+    const inside = (a: string, b: string) => seeded.filter((v) => String(v.created_at) >= ist(a) && String(v.created_at) < ist(b)).length;
+    assert.equal(r.json.views, inside("2026-10-10", "2026-10-15"));
+    assert.equal(r.json.previous_views, inside("2026-10-05", "2026-10-10"));
+    assert.equal((r.json.daily as R[]).reduce((n, d) => n + (d.count as number), 0), r.json.views);
+    const thirty = await call(fresh(), "admin-traffic", "team", { action: "summary", days: 30 });
+    assert.notEqual(r.json.views, thirty.json.views);
+  });
+
+  it("traffic refuses an inverted, future, unaligned, half-given or overlong custom range", async () => {
+    const bad = [
+      { from: ist("2026-10-14"), to: ist("2026-10-10") },
+      { from: ist("2026-10-10"), to: ist("2026-10-10") },
+      { from: ist("2026-10-18"), to: ist("2026-10-22") },
+      { from: "2026-10-10T00:00:00.000Z", to: "2026-10-15T00:00:00.000Z" }, // UTC midnights
+      { from: ist("2026-10-10") },
+      { from: ist("2025-01-01"), to: ist("2026-10-15") },
+    ];
+    for (const b of bad) assert.equal((await call(fresh(), "admin-traffic", "team", { action: "summary", ...b })).status, 400, JSON.stringify(b));
+    // Today is allowed: TO = today means up to tonight's IST midnight.
+    assert.equal((await call(fresh(), "admin-traffic", "team", { action: "summary", from: ist("2026-10-20"), to: ist("2026-10-21") })).status, 200);
+  });
 });
