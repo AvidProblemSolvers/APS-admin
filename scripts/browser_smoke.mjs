@@ -169,9 +169,16 @@ try {
     await tab("bookings", "document.querySelector('[data-click=expand]')");
   });
 
+  await step("bookings: grouped, the two needing action first, each in date order", async () => {
+    const groups = await js("return [...document.querySelectorAll('[data-region=table] tbody[data-group]')].map((t) => t.dataset.group + ':' + [...t.querySelectorAll('tr:not(.group-head) td[data-label=Name]')].map((td) => td.innerText.trim()).join('/')).join(' ')");
+    const want = "requested:Priya Raman unscheduled:Sam Ortiz upcoming:Daniel Okafor past:Mei Tanaka/Ana Lima";
+    if (groups !== want) throw new Error(`groups: ${groups}`);
+    if (!(await js("return document.querySelector('tbody[data-group=requested] .group-head a[href=\\'#/slot-requests\\']')"))) throw new Error("no link to Slot requests");
+  });
+
   await step("bookings: search filter narrows the table without losing focus", async () => {
     await js("const i=document.querySelector('input[name=q]'); i.focus(); i.value='mei'; i.dispatchEvent(new Event('input',{bubbles:true})); return 1");
-    await until("document.querySelectorAll('[data-region=table] tbody tr').length === 1", "one row");
+    await until("document.querySelectorAll('[data-region=table] tbody tr:not(.group-head)').length === 1 && document.querySelectorAll('[data-region=table] tbody[data-group]').length === 1", "one row in one group");
     if (!(await js("return document.activeElement?.name === 'q'"))) throw new Error("search lost focus");
   });
 
@@ -268,6 +275,16 @@ try {
     await click("[data-click=approve]");
     await until("document.getElementById('toast').textContent.includes('Approved')", "approved toast");
     await until("document.body.innerText.includes('No pending requests')", "list empty");
+  });
+
+  await step("slot requests: a decline can be undone and the request is back in Pending", async () => {
+    await click("[data-click=show][data-show=all]");
+    await until("document.querySelector('[data-click=reopen]')", "Undo decline button");
+    if (await js("return document.querySelectorAll('[data-click=reopen]').length") !== 1) throw new Error("Undo decline offered on a request that is not declined");
+    await click("[data-click=reopen]");
+    await until("document.getElementById('toast').textContent.includes('Back in Pending')", "reopen toast");
+    await click("[data-click=show][data-show=pending]");
+    await until("document.querySelector('[data-click=approve]') && document.body.innerText.includes('Sam Ortiz')", "reopened request pending");
   });
 
   await step("availability: add a whole-day block, preview updates", async () => {

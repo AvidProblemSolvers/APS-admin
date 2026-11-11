@@ -13,6 +13,7 @@ function when(iso, tz) {
 function request(r, ctx, now) {
   const b = r.booking || {};
   const approver = can(ctx.role, "admin-slot-requests.approve");
+  const reopener = can(ctx.role, "admin-slot-requests.reopen");
   return html`<article class="card">
     <div class="card-head">
       <h2>${b.payer_name || b.payer_email || "Unknown booking"}</h2>
@@ -37,6 +38,10 @@ function request(r, ctx, now) {
       <label class="field"><span class="label">Note to client (optional)</span><input type="text" name="note" maxlength="1000" placeholder="Sent with the standard slot list"></label>
       <button class="btn danger" type="submit">Decline and send slot list</button>
     </form>` : ""}
+    ${reopener && r.status === "declined" ? html`<div class="filters">
+      <button class="btn" type="button" data-click="reopen" data-id="${r.id}">Undo decline</button>
+      <span class="muted">Puts it back in Pending so a time can be approved. The decline email has already gone.</span>
+    </div>` : ""}
   </article>`;
 }
 
@@ -73,7 +78,14 @@ export default {
     async "submit:decline"(form, pane, ctx) {
       if (!ctx.confirm("Decline these times and email the client the standard slot list?")) return;
       const res = await ctx.api("admin-slot-requests", { action: "decline", request_id: form.dataset.id, note: form.elements.note.value });
-      ctx.toast(res.warnings?.length ? res.warnings.join(" ") : `Declined. Sent ${res.offered} open slots.`, Boolean(res.warnings?.length));
+      ctx.toast(res.warnings?.length ? res.warnings.join(" ") : `Declined. Sent ${res.offered} open slots. Undo it under ALL.`, Boolean(res.warnings?.length));
+      await pane.reload();
+    },
+    async "click:reopen"(btn, pane, ctx) {
+      const r = pane.state.rows.find((x) => x.id === btn.dataset.id);
+      if (!ctx.confirm(`Put ${r.booking?.payer_name || "this client"}'s request back in Pending? They already have the decline email and are not told about this.`)) return;
+      await ctx.api("admin-slot-requests", { action: "reopen", request_id: r.id });
+      ctx.toast("Back in Pending. Approve a time to book it.");
       await pane.reload();
     },
   },

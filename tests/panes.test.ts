@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { HttpError } from "../supabase/functions/_shared/errors.ts";
 import { generateSlots, schedulerSettings, zonedToUtc } from "../supabase/functions/_shared/slots.ts";
 import { SCHEMA } from "../mock/memory_db.ts";
 import { auditInserts, call, fresh, IDS, NOW } from "./helpers.ts";
@@ -185,6 +186,48 @@ describe("slot requests", () => {
     assert.match(mail.text, /•/);
     assert.match(mail.text, /\/confirmed\?razorpay_payment_id=/);
     assert.equal(deps.mem.tables.audit_log.at(-1)!.action, "slot_request.decline");
+  });
+
+  it("decline names a missing mail setting in its warning instead of failing", async () => {
+    const deps = fresh();
+    deps.mailer.send = async () => {
+      throw new HttpError(500, "misconfigured", "MAIL_FROM is not set");
+    };
+    const r = await call(deps, "admin-slot-requests", "admin", { action: "decline", request_id: IDS.request1 });
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.json.warnings, ["Email to the client failed: MAIL_FROM is not set."]);
+  });
+
+  it("reopen puts a declined request back to pending, audits, and it can then be approved", async () => {
+    const deps = fresh();
+    const r = await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+    assert.equal(r.status, 200, r.text);
+    const req = deps.mem.tables.slot_requests.find((x) => x.id === IDS.request2)!;
+    assert.equal(req.status, "pending");
+    const row = deps.mem.tables.audit_log.at(-1)!;
+    assert.equal(row.action, "slot_request.reopen");
+    assert.deepEqual([row.old_value, row.new_value], ['{"status":"declined"}', '{"status":"pending"}']);
+    assert.equal(deps.fakeMail.sent.length, 0);
+    const ok = await call(deps, "admin-slot-requests", "owner", { action: "approve", request_id: IDS.request2, choice: 1 });
+    assert.equal(ok.status, 200, ok.text);
+  });
+
+  it("reopen refuses anything not declined, and a booking that has since been scheduled", async () => {
+    const deps = fresh();
+    const pending = await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request1 });
+    assert.equal(pending.json.error, "not_declined");
+    await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+    await call(deps, "admin-slot-requests", "admin", { action: "approve", request_id: IDS.request2, choice: 1 });
+    const approved = await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+    assert.equal(approved.json.error, "not_declined");
+    const d2 = fresh();
+    d2.mem.tables.bookings.find((b) => b.id === IDS.bookingFresh)!.scheduled = true;
+    const sched = await call(d2, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+    assert.equal(sched.status, 409);
+    assert.equal(sched.json.error, "already_scheduled");
+    assert.equal(d2.mem.tables.slot_requests.find((x) => x.id === IDS.request2)!.status, "declined");
+    const team = await call(fresh(), "admin-slot-requests", "team", { action: "reopen", request_id: IDS.request2 });
+    assert.equal(team.status, 403);
   });
 });
 

@@ -26,6 +26,7 @@ export const CONTROLS = {
   "admin-bookings.revenue": O,
   "admin-slot-requests.approve": OA,
   "admin-slot-requests.decline": OA,
+  "admin-slot-requests.reopen": OA,
   "admin-availability.save_rules": OA,
   "admin-availability.add_override": OA,
   "admin-availability.remove_override": OA,

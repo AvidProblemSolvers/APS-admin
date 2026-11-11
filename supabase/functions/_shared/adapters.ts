@@ -1,17 +1,10 @@
 // Production adapters: GoTrue, Resend, GitHub, the site's create-meeting function and
 // Supabase Storage, all over fetch. Only index.ts files construct these.
 
+import { type Env, missingRequired, optionalEnv, requiredEnv } from "./config.ts";
 import { guardDb, postgrestDb } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import type { AuthAdmin, AuthUser, Deps, GitHub, Mailer, Meetings, Storage, WorkflowRun } from "./types.ts";
-
-type Env = (key: string) => string | undefined;
-
-function need(env: Env, key: string): string {
-  const v = env(key);
-  if (!v) throw new HttpError(500, "misconfigured", `${key} is not set`);
-  return v;
-}
 
 export function gotrue(url: string, serviceKey: string, f: typeof fetch = fetch): AuthAdmin {
   const base = `${url.replace(/\/$/, "")}/auth/v1`;
@@ -62,13 +55,13 @@ export function resend(env: Env, f: typeof fetch = fetch): Mailer {
     async send(m) {
       const res = await f("https://api.resend.com/emails", {
         method: "POST",
-        headers: { Authorization: `Bearer ${need(env, "RESEND_API_KEY")}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${requiredEnv(env, "RESEND_API_KEY")}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: need(env, "MAIL_FROM"),
+          from: requiredEnv(env, "MAIL_FROM"),
           to: [m.to],
           subject: m.subject,
           text: m.text,
-          reply_to: m.replyTo ?? env("OWNER_EMAIL"),
+          reply_to: m.replyTo ?? optionalEnv(env, "OWNER_EMAIL"),
         }),
       });
       if (!res.ok) throw new HttpError(502, "mail_failed", `Resend returned ${res.status}`);
@@ -77,9 +70,9 @@ export function resend(env: Env, f: typeof fetch = fetch): Mailer {
 }
 
 export function github(env: Env, f: typeof fetch = fetch): GitHub {
-  const api = () => `https://api.github.com/repos/${need(env, "GITHUB_SITE_REPO")}`;
+  const api = () => `https://api.github.com/repos/${requiredEnv(env, "GITHUB_SITE_REPO")}`;
   const headers = () => ({
-    Authorization: `Bearer ${need(env, "GITHUB_PAT")}`,
+    Authorization: `Bearer ${requiredEnv(env, "GITHUB_PAT")}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "aps-admin",
@@ -147,8 +140,12 @@ export function storage(url: string, serviceKey: string, f: typeof fetch = fetch
 }
 
 export function prodDeps(env: Env): Deps {
-  const url = env("SUPABASE_URL") ?? "";
-  const key = env("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  // Cold start: one "config: NAME is not set" log line per missing required variable.
+  const missing = missingRequired(env);
+  // The platform injects these two. Without them every request fails at the database,
+  // which is the honest outcome; booting anyway keeps CORS and the JSON error shape.
+  const url = missing.includes("SUPABASE_URL") ? "" : requiredEnv(env, "SUPABASE_URL");
+  const key = missing.includes("SUPABASE_SERVICE_ROLE_KEY") ? "" : requiredEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
   return {
     db: guardDb(postgrestDb(url, key)),
     auth: gotrue(url, key),

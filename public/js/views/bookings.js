@@ -2,7 +2,7 @@
 // additionally renders the revenue card, amount column and CSV export only for the owner.
 
 import { html, raw } from "../lib/html.js";
-import { can } from "../lib/panes.js";
+import { can, canSee } from "../lib/panes.js";
 import { ago, clock, dateTime, day, sameAsIst, tzAbbr, VIEWER_TZ } from "../lib/time.js";
 
 const BRIEF = [
@@ -50,6 +50,33 @@ export function filterRows(rows, f) {
   });
 }
 
+const t = (iso) => (iso ? Date.parse(iso) : 0);
+const paidOldest = (a, b) => t(a.created_at) - t(b.created_at);
+const paidNewest = (a, b) => t(b.created_at) - t(a.created_at);
+
+// The two groups that need someone to act come first, so they never hide among sessions
+// that are already settled. Within a group: whatever is waiting longest, or happening next,
+// is first. A row lands in the first group whose test it passes.
+export const GROUPS = [
+  { id: "requested", title: "Asked for other times", action: true, hint: "Waiting on an owner or admin",
+    test: (b) => b.status === "captured" && !b.scheduled && b.pending_request, sort: paidOldest },
+  { id: "unscheduled", title: "Paid · no time booked", action: true, hint: "Longest waiting first",
+    test: (b) => b.status === "captured" && !b.scheduled, sort: paidOldest },
+  { id: "upcoming", title: "Upcoming sessions", hint: "Soonest first",
+    test: (b, now) => b.status === "captured" && b.scheduled && t(b.slot_start) > now, sort: (a, b) => t(a.slot_start) - t(b.slot_start) },
+  { id: "past", title: "Past sessions", hint: "Most recent first",
+    test: (b) => b.status === "captured" && b.scheduled, sort: (a, b) => t(b.slot_start) - t(a.slot_start) },
+  { id: "other", title: "Not paid, cancelled or refunded", hint: "Newest first",
+    test: () => true, sort: paidNewest },
+];
+
+/** [{ group, rows }] in GROUPS order, empty groups left out. */
+export function groupRows(rows, now) {
+  const buckets = GROUPS.map((group) => ({ group, rows: [] }));
+  for (const b of rows) buckets.find((x) => x.group.test(b, now)).rows.push(b);
+  return buckets.filter((x) => x.rows.length).map((x) => ({ group: x.group, rows: x.rows.sort(x.group.sort) }));
+}
+
 function detailRow(d, cols) {
   if (d === "loading") return html`<tr class="detail"><td colspan="${cols}"><span class="muted">Loading brief…</span></td></tr>`;
   if (!d) return "";
@@ -82,13 +109,16 @@ function table(state, ctx) {
   const rows = filterRows(state.rows, state.filters);
   const cols = owner ? 9 : 8;
   if (!rows.length) return html`<p class="empty">No bookings match.</p>`;
+  const now = Date.parse(state.now) || Date.now();
   return html`<div class="table-wrap"><table class="stack">
     <thead><tr>
       <th>Paid</th><th>Name</th><th>Email</th>${owner ? html`<th>Amount</th>` : ""}<th>Slot</th><th>Status</th><th>Heard from</th><th>Brief</th><th><span class="sr-only">Actions</span></th>
     </tr></thead>
-    <tbody>${rows.map((b) => html`
+    ${groupRows(rows, now).map(({ group, rows: inGroup }) => html`<tbody data-group="${group.id}">
+      <tr class="group-head${group.action ? " action" : ""}"><th colspan="${cols}" scope="colgroup">${group.title} <span class="num">${inGroup.length}</span><span class="hint">${group.id === "requested" && canSee(ctx.role, "slot-requests") ? html`<a href="#/slot-requests">Approve or decline on Slot requests</a>` : group.hint}</span></th></tr>
+      ${inGroup.map((b) => html`
       <tr class="${b.flagged ? "flagged" : ""}">
-        <td data-label="Paid" class="num">${dateTime(b.created_at)}${b.flagged ? html`<span class="sub warn-text">Unscheduled ${ago(b.created_at, Date.parse(state.now))}</span>` : ""}</td>
+        <td data-label="Paid" class="num">${dateTime(b.created_at)}${b.flagged ? html`<span class="sub warn-text">Unscheduled ${ago(b.created_at, now)}</span>` : ""}</td>
         <td data-label="Name">${b.payer_name || html`<span class="muted">—</span>`}</td>
         <td data-label="Email"><a href="mailto:${b.payer_email}">${b.payer_email}</a></td>
         ${owner ? html`<td data-label="Amount" class="num">${b.amount != null ? money({ [b.currency || "USD"]: b.amount }) : ""}</td>` : ""}
@@ -102,7 +132,7 @@ function table(state, ctx) {
         </td>
       </tr>
       ${state.open[b.id] ? detailRow(state.open[b.id], cols) : ""}`)}
-    </tbody></table></div>`;
+    </tbody>`)}</table></div>`;
 }
 
 export default {

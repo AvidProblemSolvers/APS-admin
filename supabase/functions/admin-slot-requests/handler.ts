@@ -1,6 +1,7 @@
 // Slot requests pane: alternate-time requests from clients for whom no listed slot worked.
 
 import { audit } from "../_shared/audit.ts";
+import { envOr, optionalEnv } from "../_shared/config.ts";
 import { HttpError, notFound } from "../_shared/errors.ts";
 import { confirmedUrl, fmtBoth, IST } from "../_shared/format.ts";
 import { str, uuid } from "../_shared/http.ts";
@@ -8,6 +9,11 @@ import { generateSlots, schedulerSettings } from "../_shared/slots.ts";
 import type { Ctx, FunctionSpec, Row } from "../_shared/types.ts";
 
 const BOOKING_COLUMNS = ["id", "payer_name", "payer_email", "status", "scheduled", "slot_start", "razorpay_payment_id", "brief_token", "created_at"];
+
+/** A missing mail setting is named in the warning, so the admin sees why and not just that. */
+function why(e: unknown): string {
+  return e instanceof HttpError && e.code === "misconfigured" ? `: ${e.message}` : "";
+}
 
 async function settingsValues(ctx: Ctx): Promise<Record<string, string>> {
   const rows = await ctx.deps.db.select("site_settings", { columns: ["key", "value"], where: [["ilike", "key", "scheduler_%"]] });
@@ -82,8 +88,8 @@ async function approve(ctx: Ctx) {
 
   const tz = (req.requester_timezone as string) || null;
   const when = fmtBoth(start, tz);
-  const site = (env("SITE_ORIGIN") ?? "https://avidproblemsolvers.com").replace(/\/$/, "");
-  const admin = (env("ADMIN_ORIGIN") ?? "https://admin.avidproblemsolvers.com").split(",")[0];
+  const site = envOr(env, "SITE_ORIGIN", "https://avidproblemsolvers.com").replace(/\/$/, "");
+  const admin = envOr(env, "ADMIN_ORIGIN", "https://admin.avidproblemsolvers.com").split(",")[0].trim();
   const mails = [
     {
       to: String(b.payer_email),
@@ -94,7 +100,7 @@ async function approve(ctx: Ctx) {
         `prepared:\n\n${site}/brief/${b.brief_token}\n\n— Avid Problem Solvers`,
     },
     {
-      to: env("OWNER_EMAIL") ?? ctx.actor.email,
+      to: optionalEnv(env, "OWNER_EMAIL") ?? ctx.actor.email,
       subject: `Booked: ${b.payer_name ?? b.payer_email} — ${fmtBoth(start, IST)}`,
       text: `Alternate-time request approved by ${ctx.actor.email}.\n\nClient: ${b.payer_name ?? ""} <${b.payer_email}>\n` +
         `When: ${when}\nMeet: ${meetLink ?? "(not created)"}\nAdmin: ${admin}`,
@@ -102,7 +108,7 @@ async function approve(ctx: Ctx) {
   ];
   for (const m of mails) {
     if (!m.to || m.to === "null") continue;
-    await mailer.send(m).catch(() => warnings.push(`Email to ${m.to} failed.`));
+    await mailer.send(m).catch((e) => warnings.push(`Email to ${m.to} failed${why(e)}.`));
   }
 
   await audit(ctx, {
@@ -132,7 +138,7 @@ async function decline(ctx: Ctx) {
   ]);
   const slots = generateSlots({ rules, overrides, booked, settings: s, now: now() }).slice(0, 12);
   const tz = (req.requester_timezone as string) || null;
-  const link = b ? confirmedUrl(env("SITE_ORIGIN") ?? "https://avidproblemsolvers.com", String(b.razorpay_payment_id)) : "";
+  const link = b ? confirmedUrl(envOr(env, "SITE_ORIGIN", "https://avidproblemsolvers.com"), String(b.razorpay_payment_id)) : "";
 
   const warnings: string[] = [];
   if (b?.payer_email) {
@@ -143,7 +149,7 @@ async function decline(ctx: Ctx) {
         (note ? `${note}\n\n` : "") +
         (slots.length ? `These are the next open hours:\n\n${slots.map((x) => `  • ${fmtBoth(x, tz)}`).join("\n")}\n\n` : "") +
         `Choose one here: ${link}\n\n— Avid Problem Solvers`,
-    }).catch(() => warnings.push("Email to the client failed."));
+    }).catch((e) => warnings.push(`Email to the client failed${why(e)}.`));
   }
   await audit(ctx, {
     action: "slot_request.decline",
@@ -154,11 +160,33 @@ async function decline(ctx: Ctx) {
   return { ok: true, offered: slots.length, warnings };
 }
 
+// Undo a decline made by mistake: the request goes back to pending so it can be approved.
+// The decline email has already gone and is not recalled; the note is left as it is.
+async function reopen(ctx: Ctx) {
+  const id = uuid(ctx.body, "request_id");
+  const { db } = ctx.deps;
+  const [pre] = await db.select("slot_requests", { columns: ["id", "booking_id", "status"], where: [["eq", "id", id]], limit: 1 });
+  if (!pre) throw notFound();
+  if (pre.status !== "declined") throw new HttpError(409, "not_declined");
+  const [b] = await db.select("bookings", { columns: ["id", "scheduled"], where: [["eq", "id", pre.booking_id]], limit: 1 });
+  if (b?.scheduled === true) throw new HttpError(409, "already_scheduled", "The client has since booked a time.");
+  const [req] = await db.update("slot_requests", [["eq", "id", id], ["eq", "status", "declined"]], { status: "pending" });
+  if (!req) throw new HttpError(409, "not_declined");
+  await audit(ctx, {
+    action: "slot_request.reopen",
+    target: id,
+    old_value: { status: "declined" },
+    new_value: { status: "pending" },
+  });
+  return { ok: true };
+}
+
 export const spec: FunctionSpec = {
   name: "admin-slot-requests",
   actions: {
     list: { roles: ["owner", "admin"], run: list },
     approve: { roles: ["owner", "admin"], run: approve },
     decline: { roles: ["owner", "admin"], run: decline },
+    reopen: { roles: ["owner", "admin"], run: reopen },
   },
 };

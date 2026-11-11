@@ -89,6 +89,13 @@ BRIEF_BUCKET=<the private Storage bucket the brief uploads go to>
 # ALLOWED_EMAIL_DOMAIN=@avidproblemsolvers.com
 ```
 
+**Check before deploying:** `python3 scripts/env_report.py --names secrets.txt` lists every
+variable above as set / MISSING / unset (names only, never values) and exits 1 if a required one
+is missing. Produce `secrets.txt` yourself with `supabase secrets list > secrets.txt`, or pass
+`--env-file` / nothing to check a dotenv file or your shell. The full list, with what breaks when
+each is unset, is `supabase/functions/_shared/config.ts`. Missing values are also logged by the
+functions as `config: NAME is not set`.
+
 **Email domain lock:** every team member's email must be `@avidproblemsolvers.com` (or
 `ALLOWED_EMAIL_DOMAIN`). An owner row on any other address is refused — check the owner row
 before go-live. If you ever change the domain, set the same value as a GitHub Actions

@@ -28,6 +28,7 @@ const BODIES: Record<string, Record<string, unknown>> = {
   "admin-bookings.email_link": { booking_id: IDS.bookingPaidUnscheduled },
   "admin-slot-requests.list": { status: "all" },
   "admin-slot-requests.decline": { request_id: IDS.request1 },
+  "admin-slot-requests.reopen": { request_id: IDS.request2 },
   "admin-signals.list": {},
   "admin-traffic.summary": { days: 90 },
   "admin-availability.get": {},

@@ -109,3 +109,14 @@
 - [x] admin-traffic accepts `from`/`to` and checks them itself: IST midnights only, from < to, ends no later than tonight (IST), ≤ 366 days; bars are IST days; prior period = same length immediately before
 - [x] check.py guards (real handlers on a fake pane + the real Edge Function on the mock DB); 13 mutations, all fail check.py
 - [x] Smoke: 24 steps pass, incl. a custom range changing the numbers, surviving a reload, and an inverted range making no request
+
+## Env manifest, grouped Bookings, undo decline (2026-11-11)
+- [x] `supabase/functions/_shared/config.ts`: ENV_VARS lists all 11 variables the functions read (required/optional/platform-provided, what breaks); names unchanged from what is deployed
+- [x] Read only via `requiredEnv` / `optionalEnv` / `envOr`; unset → `config: NAME is not set` logged once per isolate; optional carries on, required → 500 `misconfigured` naming it; every cold start logs each missing required variable
+- [x] Slot request approve/decline warnings now name a missing mail setting ("Email to the client failed: MAIL_FROM is not set.")
+- [x] `scripts/env_report.py`: environment, `--env-file`, or `--names` (e.g. saved `supabase secrets list` output); names only, exit 1 on a missing required variable
+- [x] Bookings: one table, row groups — Asked for other times · Paid, no time booked (both marked as needing action) · Upcoming (soonest first) · Past (most recent first) · Not paid/cancelled/refunded (newest first); filters apply before grouping
+- [x] Slot requests: `reopen` action (owner, admin; server-checked) puts a declined request back to pending with its own audit row; "Undo decline" on declined cards under ALL
+- [ ] /confirmed one-time pre-select — **not in this repo**: the slot picker is the site repo's `/confirmed` page. Skipped.
+- [x] check.py guards for all of the above; 24 mutations, all fail check.py
+- [x] Smoke: 26 steps pass, incl. the group order and an undone decline back in Pending

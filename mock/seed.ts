@@ -20,6 +20,7 @@ export const IDS = {
   bookingFresh: "10000000-0000-4000-8000-000000000004",
   bookingLastMonth: "10000000-0000-4000-8000-000000000005",
   request1: "20000000-0000-4000-8000-000000000001",
+  request2: "20000000-0000-4000-8000-000000000002",
 };
 
 export const LEAK_AMOUNTS = [98765.43, 87654.32, 76543.21, 65432.1, 54321.09];
@@ -85,6 +86,11 @@ export function seed(now: Date = NOW): Record<string, Row[]> {
       {
         id: IDS.request1, booking_id: IDS.bookingPaidUnscheduled, status: "pending", requester_timezone: "America/New_York",
         preferred_1: h(96), preferred_2: h(120), preferred_3: h(144), note: "Mornings Eastern please.", created_at: h(-20),
+      },
+      {
+        // Declined — the Slot requests pane can reopen it.
+        id: IDS.request2, booking_id: IDS.bookingFresh, status: "declined", requester_timezone: "Europe/Berlin",
+        preferred_1: h(100), preferred_2: h(124), preferred_3: null, note: null, created_at: h(-1),
       },
     ],
     availability_rules: [1, 2, 3, 4, 5].map((weekday) => ({

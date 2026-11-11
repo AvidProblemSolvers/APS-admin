@@ -5,6 +5,7 @@
 // The role check here is the server half of rule 3. It never trusts anything the browser
 // says about who the caller is or what role they hold.
 
+import { envOr, optionalEnv } from "./config.ts";
 import { allowedDomain, inAllowedDomain } from "./email_domain.js";
 import { DbError, HttpError } from "./errors.ts";
 import type { Actor, Ctx, Deps, FunctionSpec, Role, Row } from "./types.ts";
@@ -13,7 +14,7 @@ import { ROLES } from "./types.ts";
 const MAX_BODY = 512 * 1024;
 
 function corsHeaders(req: Request, deps: Deps): Record<string, string> {
-  const allowed = (deps.env("ADMIN_ORIGIN") ?? "https://admin.avidproblemsolvers.com")
+  const allowed = envOr(deps.env, "ADMIN_ORIGIN", "https://admin.avidproblemsolvers.com")
     .split(",").map((s) => s.trim()).filter(Boolean);
   const origin = req.headers.get("origin") ?? "";
   const h: Record<string, string> = {
@@ -51,7 +52,7 @@ export async function authenticate(req: Request, deps: Deps): Promise<Actor> {
   if (!user) throw denied;
   // Domain lock, before team_members is even read: an off-domain account is refused
   // whatever role its row claims, with the same response as an unknown one.
-  const domain = allowedDomain(deps.env("ALLOWED_EMAIL_DOMAIN"));
+  const domain = allowedDomain(optionalEnv(deps.env, "ALLOWED_EMAIL_DOMAIN"));
   if (!inAllowedDomain(user.email, domain)) throw denied;
   const rows = await deps.db.select("team_members", {
     columns: ["id", "email", "full_name", "role", "active"],

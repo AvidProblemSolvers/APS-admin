@@ -226,6 +226,11 @@ tbody tr:last-child td { border-bottom: 0; }
 tbody tr { transition: background-color var(--t) var(--ease); }
 tbody tr:hover { background: var(--row-hover); }
 tr.flagged td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+tr.group-head th { position: static; padding-top: 14px; color: var(--text); background: var(--surface); }
+tr.group-head th .num { margin-left: 6px; }
+tr.group-head th .hint { margin-left: 12px; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-family: var(--sans); font-weight: 400; }
+tr.group-head.action th { color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
+tbody tr.group-head:hover { background: none; }
 tr.detail > td { background: var(--surface); padding: 12px 14px; }
 td .sub { display: block; color: var(--text-muted); font-size: 12px; }
 td.actions { white-space: nowrap; text-align: right; }
@@ -399,6 +404,9 @@ textarea.autosize { resize: none; overflow: hidden; field-sizing: content; }
   table.stack tr.detail td { display: block; }
   tr.flagged td:first-child { box-shadow: none; }
   table.stack tr.flagged { border-color: var(--warn-border); }
+  table.stack tr.group-head { border: 0; margin: 14px 0 6px; padding: 0; }
+  table.stack tr.group-head th { display: block; padding: 4px 10px; }
+  table.stack tr.group-head th .hint { display: block; margin: 2px 0 0; }
 }
 
 /* the theme toggle needs the room on the narrowest phones */

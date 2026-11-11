@@ -101,6 +101,7 @@ describe("audit log is append-only", () => {
       ["admin-availability", { action: "add_override", date: "2026-10-30", kind: "block" }, "admin"],
       ["admin-bookings", { action: "email_link", booking_id: IDS.bookingPaidUnscheduled }, "admin"],
       ["admin-slot-requests", { action: "decline", request_id: IDS.request1 }, "admin"],
+      ["admin-slot-requests", { action: "reopen", request_id: IDS.request2 }, "admin"],
       ["admin-team", { action: "set_role", member_id: IDS.team, role: "admin" }, "owner"],
       ["trigger-publish", { action: "publish" }, "admin"],
     ];

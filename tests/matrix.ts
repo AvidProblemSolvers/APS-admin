@@ -7,7 +7,7 @@ const O = ["owner"];
 export const EXPECTED: Record<string, Record<string, string[]>> = {
   "admin-me": { me: ALL },
   "admin-bookings": { list: ALL, detail: ALL, email_link: OA, export_csv: O },
-  "admin-slot-requests": { list: OA, approve: OA, decline: OA },
+  "admin-slot-requests": { list: OA, approve: OA, decline: OA, reopen: OA },
   "admin-availability": { get: OA, save_rules: OA, add_override: OA, remove_override: OA },
   "admin-content": { list: OA, save: OA },
   "admin-answers": { list: OA, save: OA },

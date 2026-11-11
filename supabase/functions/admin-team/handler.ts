@@ -3,6 +3,7 @@
 // cannot be demoted or deactivated, and an owner cannot change their own role.
 
 import { audit } from "../_shared/audit.ts";
+import { envOr, optionalEnv } from "../_shared/config.ts";
 import { HttpError, notFound } from "../_shared/errors.ts";
 import { allowedDomain, inAllowedDomain } from "../_shared/email_domain.js";
 import { str, uuid } from "../_shared/http.ts";
@@ -18,7 +19,7 @@ function role(v: unknown): Role {
 }
 
 function adminUrl(ctx: Ctx): string {
-  return (ctx.deps.env("ADMIN_ORIGIN") ?? "https://admin.avidproblemsolvers.com").split(",")[0].trim() + "/";
+  return envOr(ctx.deps.env, "ADMIN_ORIGIN", "https://admin.avidproblemsolvers.com").split(",")[0].trim() + "/";
 }
 
 async function list(ctx: Ctx) {
@@ -53,7 +54,7 @@ async function invite(ctx: Ctx) {
   const email = str(ctx.body, "email", { required: true, max: 254 }).trim().toLowerCase();
   if (!EMAIL.test(email)) throw new HttpError(400, "invalid_input", "not an email address");
   // An off-domain member could never sign in (http.ts refuses them), so do not create one.
-  const domain = allowedDomain(ctx.deps.env("ALLOWED_EMAIL_DOMAIN"));
+  const domain = allowedDomain(optionalEnv(ctx.deps.env, "ALLOWED_EMAIL_DOMAIN"));
   if (!inAllowedDomain(email, domain)) throw new HttpError(400, "invalid_input", `must be an ${domain} address`);
   const r = role(ctx.body.role);
   const full_name = str(ctx.body, "full_name", { max: 120 }).trim() || null;

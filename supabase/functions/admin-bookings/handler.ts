@@ -3,6 +3,7 @@
 // the database, so they cannot appear in a response.
 
 import { audit } from "../_shared/audit.ts";
+import { envOr } from "../_shared/config.ts";
 import { HttpError, notFound } from "../_shared/errors.ts";
 import { confirmedUrl, fmtBoth, IST, monthStartIst } from "../_shared/format.ts";
 import { csv, uuid } from "../_shared/http.ts";
@@ -95,7 +96,7 @@ async function detail(ctx: Ctx) {
     : [];
   let files: { name: string; url: string | null }[] = [];
   if (brief && Array.isArray(brief.file_urls)) {
-    const bucket = env("BRIEF_BUCKET") ?? "briefs";
+    const bucket = envOr(env, "BRIEF_BUCKET", "briefs");
     files = await Promise.all((brief.file_urls as string[]).map(async (p) => ({
       name: p.split("/").pop() ?? p,
       url: /^https?:\/\//.test(p) ? p : await storage.signedUrl(bucket, p, 600).catch(() => null),
@@ -115,7 +116,7 @@ async function emailLink(ctx: Ctx) {
   if (!b) throw notFound();
   if (b.status !== "captured" || b.scheduled === true) throw new HttpError(409, "not_unscheduled");
   if (!b.payer_email) throw new HttpError(409, "no_email");
-  const link = confirmedUrl(env("SITE_ORIGIN") ?? "https://avidproblemsolvers.com", String(b.razorpay_payment_id));
+  const link = confirmedUrl(envOr(env, "SITE_ORIGIN", "https://avidproblemsolvers.com"), String(b.razorpay_payment_id));
   const name = b.payer_name ? String(b.payer_name).split(" ")[0] : "there";
   await mailer.send({
     to: String(b.payer_email),

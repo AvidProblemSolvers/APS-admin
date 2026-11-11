@@ -994,6 +994,262 @@ if re.search(r"audit\(|audit_log", re.sub(r"//.*", "", settings_fn)):
 if "updated_by: ctx.actor.id" not in settings_fn:
     fail("admin-settings must set updated_by")
 
+# --- environment variables: one manifest, read only through the helpers ---------------------
+# supabase/functions/_shared/config.ts lists every variable; scripts/env_report.py reads that
+# list. These names are live in production — a rename here breaks a deployed function, so the
+# manifest must match this set exactly (a new variable is added to both, deliberately).
+LIVE_ENV = {
+    "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY", "MAIL_FROM", "GITHUB_PAT", "GITHUB_SITE_REPO",
+    "ADMIN_ORIGIN", "SITE_ORIGIN", "OWNER_EMAIL", "BRIEF_BUCKET", "ALLOWED_EMAIL_DOMAIN",
+}
+ENV_HELPER_RE = r"\b(requiredEnv|optionalEnv|envOr)\(\s*[\w.]+,\s*\"([A-Z][A-Z0-9_]*)\""
+
+
+def env_problems():
+    import importlib.util
+    out = []
+    spec = importlib.util.spec_from_file_location("env_report", ROOT / "scripts/env_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    try:
+        entries = mod.manifest()
+    except SystemExit as e:
+        return ["env_report.py cannot read the manifest: %s" % e]
+    names = {e[0] for e in entries}
+    if len(names) != len(entries):
+        out.append("config.ts: a variable is listed twice")
+    if names != LIVE_ENV:
+        out.append("config.ts: ENV_VARS must hold exactly the live names; missing %s, unexpected %s"
+                   % (sorted(LIVE_ENV - names), sorted(names - LIVE_ENV)))
+    for name, required, provided, breaks in entries:
+        if not breaks.strip():
+            out.append("config.ts: %s must say what breaks when it is unset" % name)
+    required = {e[0] for e in entries if e[1]}
+    used = {}
+    for p in files("supabase/functions", {".ts", ".js"}):
+        rel = str(p.relative_to(ROOT))
+        src = re.sub(r"^\s*//.*$", "", p.read_text(), flags=re.M)
+        if p.name == "config.ts" and p.parent.name == "_shared":
+            continue
+        if re.search(r"\benv\(|Deno\.env\.(?!get\(key\))", src):
+            out.append("%s: reads an environment variable directly — use requiredEnv / optionalEnv / envOr" % rel)
+        if "Deno.env" in src and not (p.name == "index.ts" and "prodDeps((key) => Deno.env.get(key))" in src):
+            out.append("%s: Deno.env is only handed to prodDeps in index.ts" % rel)
+        for helper, name in re.findall(ENV_HELPER_RE, src):
+            used.setdefault(name, set()).add(helper)
+            if name not in names:
+                out.append("%s: %s(%s) is not in the manifest" % (rel, helper, name))
+            elif name in required and helper != "requiredEnv":
+                out.append("%s: %s is required — read it with requiredEnv, not %s" % (rel, name, helper))
+            elif name not in required and helper == "requiredEnv":
+                out.append("%s: %s is optional — requiredEnv would fail the request" % (rel, name))
+    for name in sorted(names - set(used)):
+        out.append("config.ts: %s is listed but no function reads it" % name)
+
+    # The helpers themselves, and the TS list agreeing with what env_report parsed.
+    r = subprocess.run(["node", "--input-type=module", "-e", ENV_HARNESS], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode:
+        return out + ["config.ts: helper harness failed: %s" % r.stderr.strip()[-300:]]
+    h = _json.loads(r.stdout)
+    if h["names"] != [e[0] for e in entries] or h["required"] != sorted(required):
+        out.append("env_report.py parses a different list from config.ts ENV_VARS")
+    if h["required_throw"] != [500, "misconfigured", "MAIL_FROM is not set"] or h["required_log"] != ["config: MAIL_FROM is not set"]:
+        out.append("requiredEnv must log \"config: NAME is not set\" and throw a 500 misconfigured, got %s %s" % (h["required_throw"], h["required_log"]))
+    if h["optional"] != [None, "fallback"] or h["optional_log"] != ["config: OWNER_EMAIL is not set", "config: SITE_ORIGIN is not set"]:
+        out.append("optionalEnv / envOr must log the name once and carry on, got %s %s" % (h["optional"], h["optional_log"]))
+    if h["boot"] != "ok":
+        out.append("prodDeps must boot with nothing set (it logs instead): %s" % h["boot"])
+
+    # The report: names only, never values; exit 1 only for a missing required variable.
+    secret = "s3cr3t-VALUE-%d"
+    full = {n: secret % i for i, n in enumerate(sorted(LIVE_ENV))}
+
+    def report(env):
+        return subprocess.run([sys.executable, "scripts/env_report.py"], cwd=ROOT, capture_output=True, text=True,
+                              env={"PATH": "/usr/bin:/bin", **env})
+    cases = {
+        "all set": (full, 0),
+        "MAIL_FROM unset": ({k: v for k, v in full.items() if k != "MAIL_FROM"}, 1),
+        "MAIL_FROM blank": (dict(full, MAIL_FROM="  "), 1),
+        "optional unset": ({k: v for k, v in full.items() if k in required}, 0),
+        "platform-provided absent": ({k: v for k, v in full.items() if not k.startswith("SUPABASE_")}, 0),
+    }
+    for label, (env, code) in cases.items():
+        r = report(env)
+        if r.returncode != code:
+            out.append("env_report.py: %s must exit %d, got %d" % (label, code, r.returncode))
+        if "s3cr3t-VALUE" in r.stdout + r.stderr:
+            out.append("env_report.py: %s printed a value — names only" % label)
+        if any(n not in r.stdout for n in LIVE_ENV):
+            out.append("env_report.py: %s must list every variable" % label)
+        if code and not re.search(r"MAIL_FROM\s+MISSING", r.stdout):
+            out.append("env_report.py: %s must mark MAIL_FROM as MISSING" % label)
+    return out
+
+
+ENV_HARNESS = """
+import { ENV_VARS, envOr, optionalEnv, requiredEnv } from "./supabase/functions/_shared/config.ts";
+import { prodDeps } from "./supabase/functions/_shared/adapters.ts";
+const logs = [];
+console.warn = (...a) => logs.push(a.join(" "));
+const out = { names: ENV_VARS.map((v) => v.name), required: ENV_VARS.filter((v) => v.required).map((v) => v.name).sort() };
+const empty = (k) => ({ SITE_ORIGIN: " " })[k];
+try { requiredEnv(empty, "MAIL_FROM"); out.required_throw = "did not throw"; } catch (e) { out.required_throw = [e.status, e.code, e.message]; }
+out.required_log = logs.splice(0);
+out.optional = [optionalEnv(empty, "OWNER_EMAIL") ?? null, envOr(empty, "SITE_ORIGIN", "fallback")];
+optionalEnv(empty, "OWNER_EMAIL");
+out.optional_log = logs.splice(0);
+try { prodDeps(() => undefined); out.boot = "ok"; } catch (e) { out.boot = String(e); }
+console.log(JSON.stringify(out));
+"""
+
+for msg in env_problems():
+    fail(msg)
+
+
+# --- Bookings: grouped, action first, date order within each group -------------------------------
+# Renders the real view on shuffled rows. The two groups that need action come first (asked for
+# other times, then paid with no time), then upcoming (soonest first), past (most recent first),
+# then the rest (newest first). The filters still apply before grouping.
+BOOKINGS_HARNESS = """
+import view from "./public/js/views/bookings.js";
+const H = 3_600_000, now = Date.parse("2026-11-11T06:00:00Z");
+const at = (h) => new Date(now + h * H).toISOString();
+const row = (name, o) => ({ id: name, payer_name: name, payer_email: name + "@x.co", status: "captured", scheduled: false,
+  pending_request: false, flagged: false, heard_from: "", created_at: at(-10), ...o });
+const rows = [
+  row("Past-old", { scheduled: true, slot_start: at(-300), created_at: at(-400) }),
+  row("Unsched-new", { created_at: at(-2) }),
+  row("Up-later", { scheduled: true, slot_start: at(90), created_at: at(-5) }),
+  row("Asked-new", { pending_request: true, created_at: at(-3) }),
+  row("Refunded", { status: "refunded", created_at: at(-1) }),
+  row("Past-recent", { scheduled: true, slot_start: at(-20), created_at: at(-50) }),
+  row("Unsched-old", { created_at: at(-60), flagged: true }),
+  row("Up-soon", { scheduled: true, slot_start: at(20), created_at: at(-1) }),
+  row("Asked-old", { pending_request: true, created_at: at(-80), flagged: true }),
+  row("Created", { status: "created", created_at: at(-30) }),
+  row("Scheduled-asked", { scheduled: true, pending_request: true, slot_start: at(40), created_at: at(-9) }),
+];
+const stats = { total: 0, upcoming: 0, paid_not_scheduled: 0, brief_missing: 0 };
+const render = (role, filters = {}) => String(view.render({ rows: [...rows], stats, now: new Date(now).toISOString(), filters, open: {} }, { role }));
+console.log(JSON.stringify({ admin: render("admin"), team: render("team"), scheduled: render("owner", { sched: "scheduled" }), q: render("admin", { q: "asked-" }) }));
+"""
+
+BOOKINGS_WANT = [
+    ("requested", ["Asked-old", "Asked-new"]),
+    ("unscheduled", ["Unsched-old", "Unsched-new"]),
+    ("upcoming", ["Up-soon", "Scheduled-asked", "Up-later"]),
+    ("past", ["Past-recent", "Past-old"]),
+    ("other", ["Refunded", "Created"]),
+]
+
+
+def booking_groups(page):
+    out = []
+    for gid, body in re.findall(r'<tbody data-group="(\w+)">(.*?)</tbody>', page, re.S):
+        head = re.search(r'<tr class="group-head( action)?">', body)
+        names = re.findall(r'<td data-label="Name">([^<]+)</td>', body)
+        out.append((gid, names, bool(head and head.group(1))))
+    return out
+
+
+def bookings_problems(res):
+    out = []
+    for role in ("admin", "team"):
+        got = booking_groups(res[role])
+        if [(g, n) for g, n, _ in got] != BOOKINGS_WANT:
+            out.append("bookings (%s): groups must be %s, got %s" % (role, BOOKINGS_WANT, [(g, n) for g, n, _ in got]))
+        if [a for _, _, a in got] != [True, True, False, False, False]:
+            out.append("bookings (%s): only the two action groups are marked as needing action" % role)
+        if len(re.findall(r'<thead>', res[role])) != 1:
+            out.append("bookings (%s): one table with one header, the groups as row groups" % role)
+    if '#/slot-requests' not in res["admin"] or '#/slot-requests' in res["team"]:
+        out.append("bookings: the Slot requests link renders only for roles that can open that pane")
+    got = [(g, n) for g, n, _ in booking_groups(res["scheduled"])]
+    if got != [BOOKINGS_WANT[2], BOOKINGS_WANT[3]]:
+        out.append("bookings: the Slot filter must still apply before grouping, got %s" % got)
+    got = [(g, n) for g, n, _ in booking_groups(res["q"])]
+    if got != [BOOKINGS_WANT[0]]:
+        out.append("bookings: the search filter must still apply before grouping, got %s" % got)
+    for f in ('name="q"', 'name="status"', 'name="sched"', 'name="brief"', 'name="from"', 'name="to"'):
+        if f not in res["admin"]:
+            out.append("bookings: the %s filter must stay" % f)
+    return out
+
+
+_r = subprocess.run(["node", "--input-type=module", "-e", BOOKINGS_HARNESS], cwd=ROOT, capture_output=True, text=True)
+if _r.returncode:
+    fail("bookings.js: could not run the grouping check: %s" % _r.stderr.strip()[-300:])
+else:
+    for msg in bookings_problems(_json.loads(_r.stdout)):
+        fail(msg)
+
+
+# --- Slot requests: a decline can be undone ----------------------------------------------------
+# The real handler on the mock DB: declined → pending with its own audit row, nothing else
+# reopens, team is refused; the view offers "Undo decline" on declined cards only, to roles the
+# control list allows.
+REOPEN_HARNESS = """
+import view from "./public/js/views/slot-requests.js";
+import { CONTROLS } from "./public/js/lib/panes.js";
+import { call, fresh, IDS } from "./tests/helpers.ts";
+const out = {};
+let deps = fresh();
+let r = await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+const req = deps.mem.tables.slot_requests.find((x) => x.id === IDS.request2);
+const row = deps.mem.tables.audit_log.at(-1);
+out.reopen = [r.status, req.status, row.action, row.target, deps.fakeMail.sent.length];
+out.pending = (await call(fresh(), "admin-slot-requests", "owner", { action: "reopen", request_id: IDS.request1 })).status;
+deps = fresh();
+await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 });
+out.approve_after = (await call(deps, "admin-slot-requests", "admin", { action: "approve", request_id: IDS.request2, choice: 1 })).status;
+out.approved = (await call(deps, "admin-slot-requests", "admin", { action: "reopen", request_id: IDS.request2 })).status;
+out.team = (await call(fresh(), "admin-slot-requests", "team", { action: "reopen", request_id: IDS.request2 })).status;
+out.controls = CONTROLS["admin-slot-requests.reopen"] ?? null;
+const card = (status) => ({ id: status, status, booking: { payer_name: "P" }, preferred_1: "2030-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" });
+const rows = ["pending", "approved", "declined"].map(card);
+out.html = Object.fromEntries(["owner", "admin", "team"].map((role) => [role, String(view.render({ show: "all", rows }, { role }))]));
+console.log(JSON.stringify(out));
+"""
+
+
+def reopen_problems(res):
+    out = []
+    status, after, action, target, mails = res["reopen"]
+    if status != 200 or after != "pending":
+        out.append("admin-slot-requests: reopen must put a declined request back to pending, got %s / %s" % (status, after))
+    if action != "slot_request.reopen" or target != "20000000-0000-4000-8000-000000000002":
+        out.append("admin-slot-requests: reopen must write its own audit row, got %s" % action)
+    if mails:
+        out.append("admin-slot-requests: reopen must not email anyone")
+    if res["pending"] != 409 or res["approved"] != 409:
+        out.append("admin-slot-requests: only a declined request reopens (pending %s, approved %s)" % (res["pending"], res["approved"]))
+    if res["approve_after"] != 200:
+        out.append("admin-slot-requests: a reopened request must be approvable, got %s" % res["approve_after"])
+    if res["team"] != 403:
+        out.append("admin-slot-requests: team must be refused reopen on the server, got %s" % res["team"])
+    if res["controls"] != ["owner", "admin"]:
+        out.append("panes.js: admin-slot-requests.reopen must be owner and admin, got %s" % res["controls"])
+    for role, page in res["html"].items():
+        buttons = re.findall(r'<article class="card">.*?</article>', page, re.S)
+        got = ['data-click="reopen"' in b for b in buttons]
+        want = [False, False, role != "team"]
+        if got != want:
+            out.append("slot-requests (%s): Undo decline must render on declined cards only, got %s" % (role, got))
+    return out
+
+
+_fn = (ROOT / "supabase/functions/admin-slot-requests/handler.ts").read_text()
+if not re.search(r'reopen:\s*\{\s*roles:\s*\["owner", "admin"\]', _fn):
+    fail("admin-slot-requests: reopen must be registered for owner and admin")
+_r = subprocess.run(["node", "--input-type=module", "-e", REOPEN_HARNESS], cwd=ROOT, capture_output=True, text=True)
+if _r.returncode:
+    fail("slot-requests: could not run the reopen check: %s" % _r.stderr.strip()[-300:])
+else:
+    for msg in reopen_problems(_json.loads(_r.stdout)):
+        fail(msg)
+
+
 # --- result --------------------------------------------------------------------------------------
 if FAIL:
     print("check.py: %d problem(s)" % len(FAIL))
