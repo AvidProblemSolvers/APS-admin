@@ -718,8 +718,9 @@ for msg in order_problems():
 
 
 def nav_problems(css_src, page_html):
-    """Both tab rows (.tabs, .subtabs) are set at 600 or heavier, Plex Mono 600 is loaded, and the
-    active tab differs from the rest by colour and an underline, not by weight alone."""
+    """Both tab rows (.tabs, .subtabs) are set at 600 or heavier, Plex Mono 600 is loaded for the
+    main row, and the active tab differs from the rest by colour and an underline, not by weight
+    alone. Only the main row is uppercase mono; the Content section tabs are set in Inter."""
     out = []
     src = re.sub(r"/\*.*?\*/", "", css_src, flags=re.S)
     rule = lambda sel: " ".join(re.findall(r"(?:^|\})\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", src))
@@ -728,7 +729,7 @@ def nav_problems(css_src, page_html):
         w = prop(rule(row), "font-weight")
         if not w or not w.strip().isdigit() or int(w) < 600:
             out.append("admin.css: %s must be font-weight 600 or heavier, got %s" % (row, w))
-        if prop(rule(row), "letter-spacing") != ".18em" or prop(rule(row), "text-transform") != "uppercase":
+        if row == ".tabs a" and (prop(rule(row), "letter-spacing") != ".18em" or prop(rule(row), "text-transform") != "uppercase"):
             out.append("admin.css: %s must keep .18em tracking and uppercase" % row)
         act = rule(row + "[aria-current=page]")
         if not prop(act, "color") or prop(act, "color") == prop(rule(row), "color") or not prop(act, "border-bottom-color"):
@@ -743,6 +744,70 @@ def nav_problems(css_src, page_html):
 
 
 for msg in nav_problems((ROOT / "public/css/admin.css").read_text(), (ROOT / "public/index.html").read_text()):
+    fail(msg)
+
+
+# --- Content pane: type hierarchy --------------------------------------------------------------
+# Section tabs and group headings are ordinary words in Inter, not uppercase monospace; the tabs
+# outrank the headings by size and weight; the field keys stay monospace because they are literal.
+
+def css_rules(css_src):
+    """[(selector, body)] for every innermost rule, one entry per comma-separated selector."""
+    src = re.sub(r"/\*.*?\*/", "", css_src, flags=re.S)
+    out = []
+    for sels, body in re.findall(r"([^{}]+)\{([^{}]*)\}", src):
+        for sel in sels.split(","):
+            out.append((" ".join(sel.split()), body))
+    return out
+
+
+def _decl(body, name):
+    return (re.findall(r"(?:^|;|\s)" + name + r"\s*:\s*([^;]+)", body) or [None])[-1]
+
+
+def _px(v):
+    m = re.fullmatch(r"\s*([\d.]+)px\s*", v or "")
+    return float(m.group(1)) if m else None
+
+
+def content_type_problems(css_src):
+    out = []
+    rules = css_rules(css_src)
+    MONO = re.compile(r"--mono|monospace|Plex Mono", re.I)
+    labelled = [(s, b) for s, b in rules if s.startswith(".subtabs") or "cg-head" in s]
+    for sel, body in labelled:
+        for name in ("font-family", "font"):
+            v = _decl(body, name)
+            if v and MONO.search(v):
+                out.append("admin.css: %s must not be monospace (%s: %s)" % (sel, name, v.strip()))
+        if (_decl(body, "text-transform") or "").strip() == "uppercase":
+            out.append("admin.css: %s must not be uppercase-transformed" % sel)
+    tab = " ".join(b for s, b in rules if s == ".subtabs a")
+    if "sans" not in (_decl(tab, "font-family") or ""):
+        out.append("admin.css: .subtabs a must set font-family: var(--sans)")
+    head = " ".join(b for s, b in rules if s == ".cg-head")
+    if "sans" not in (_decl(head, "font-family") or ""):
+        out.append("admin.css: .cg-head must set font-family: var(--sans)")
+    tsize, tweight = _px(_decl(tab, "font-size")), int((_decl(tab, "font-weight") or "400").strip())
+    if tsize is None:
+        out.append("admin.css: .subtabs a needs a px font-size to rank against the group headings")
+    for sel, body in [(s, b) for s, b in rules if s.endswith(".cg-head")]:
+        size = _px(_decl(body, "font-size"))
+        if sel == ".cg-head" and size is None:
+            out.append("admin.css: .cg-head needs a px font-size")
+        if tsize is not None and size is not None and size >= tsize:
+            out.append("admin.css: %s (%gpx) must be smaller than the section tabs (%gpx)" % (sel, size, tsize))
+        w = _decl(body, "font-weight")
+        if (w or sel == ".cg-head") and int((w or "400").strip()) >= tweight:
+            out.append("admin.css: %s (weight %s) must be lighter than the section tabs (%d)" % (sel, (w or "400").strip(), tweight))
+    for sel in (".content-field .fkey", ".fkeys"):
+        body = " ".join(b for s, b in rules if s == sel)
+        if "--mono" not in (_decl(body, "font-family") or ""):
+            out.append("admin.css: %s (literal field keys) must stay font-family: var(--mono)" % sel)
+    return out
+
+
+for msg in content_type_problems((ROOT / "public/css/admin.css").read_text()):
     fail(msg)
 
 # --- Traffic pane: CUSTOM range ----------------------------------------------------------------

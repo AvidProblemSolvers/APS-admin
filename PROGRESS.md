@@ -120,3 +120,8 @@
 - [ ] /confirmed one-time pre-select — **not in this repo**: the slot picker is the site repo's `/confirmed` page. Skipped.
 - [x] check.py guards for all of the above; 24 mutations, all fail check.py
 - [x] Smoke: 26 steps pass, incl. the group order and an undone decline back in Pending
+
+## Content pane type
+- [x] Section tabs: Inter 13.5px/600, no uppercase or tracking; counts and active underline kept
+- [x] Group headings: Inter 12px/500, smaller and lighter than the tabs; field keys stay Plex Mono
+- [x] check.py `content_type_problems` (+ `nav_problems` keeps uppercase mono only for the main tab row); 12 mutations, all fail check.py

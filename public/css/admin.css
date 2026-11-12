@@ -281,21 +281,21 @@ td.actions { white-space: nowrap; text-align: right; }
 .subtabs a {
   padding: 7px 8px 6px; white-space: nowrap; text-decoration: none;
   color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+  font-family: var(--sans); font-size: 13.5px; font-weight: 600;
   transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
 }
 .subtabs a:hover { color: var(--text); }
 .subtabs a[aria-current=page] { color: var(--accent-fg); border-bottom-color: var(--accent); }
-.subtabs .n { margin-left: 6px; letter-spacing: 0; opacity: .7; font-weight: 400; }
-.subtabs .dirty { margin-left: 4px; letter-spacing: 0; color: var(--warn); }
+.subtabs .n { margin-left: 6px; opacity: .7; font-weight: 400; }
+.subtabs .dirty { margin-left: 4px; color: var(--warn); }
 /* Each heading level steps in once more and draws its own rule, so depth reads at a glance. */
 .ctree, .cgroup { display: grid; gap: 12px; align-content: start; }
 .cgroup { margin-left: 2px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
 .cg-head {
   padding-bottom: 4px; border-bottom: 1px solid var(--border);
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-fg);
+  font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--accent-fg);
 }
-.cgroup .cgroup > .cg-head { color: var(--text); font-size: 10px; }
+.cgroup .cgroup > .cg-head { color: var(--text); }
 .cgroup .cgroup .cgroup > .cg-head { color: var(--text-muted); }
 .cg-head .crumb { color: var(--text-muted); opacity: .75; }
 /* A group: one "Label: value" line per field in one textarea, grown to fit (no scrollbar). */
